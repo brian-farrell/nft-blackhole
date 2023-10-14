@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 
 '''Script to blocking IP in nftables by country and black lists'''
 
@@ -94,6 +94,7 @@ opener.addheaders = [('User-agent', 'Mozilla/5.0 (compatible; nft-blackhole/0.1.
                       '+https://github.com/tomasz-c/nft-blackhole)')]
 urllib.request.install_opener(opener)
 
+
 def stop():
     '''Stopping nft-blackhole'''
     run(['nft', 'delete', 'table', 'inet', 'blackhole'], check=False)
@@ -114,6 +115,7 @@ def start():
 def get_urls(urls, do_filter=False):
     '''Download url in threads'''
     ip_list_aggregated = []
+
     def get_url(url):
         try:
             response = urllib.request.urlopen(url, timeout=10)
@@ -147,7 +149,10 @@ def get_country_ip_list(ip_ver):
     '''Get country lists from GitHub @herrbischoff'''
     urls = []
     for country in COUNTRY_LIST:
-        url = f'https://raw.githubusercontent.com/herrbischoff/country-ip-blocks/master/ip{ip_ver}/{country.lower()}.cidr'
+        url = (
+            f'https://raw.githubusercontent.com/herrbischoff/country-ip-blocks/'
+            f'master/ip{ip_ver}/{country.lower()}.cidr'
+        )
         urls.append(url)
     ips = get_urls(urls)
     return ips
