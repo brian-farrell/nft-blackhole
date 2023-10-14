@@ -58,8 +58,8 @@ Tested with Debian buster 10
 
 ##### Install files
 
-    sudo cp nft-blackhole.conf /etc/
-    sudo cp nft-blackhole.py   /usr/bin/
+    sudo cp nft-blackhole.conf /usr/local/etc/
+    sudo cp nft-blackhole.py   /usr/local/bin/
     sudo mkdir /usr/share/nft-blackhole
     sudo cp nft-blackhole.template /usr/share/nft-blackhole/
     sudo cp nft-blackhole.service        /lib/systemd/system/
@@ -74,24 +74,24 @@ Tested with Debian buster 10
 - systemd (for daemon)
 
 ##### File location
-    /usr/bin/nft-blackhole.py
+    /usr/local/bin/nft-blackhole.py
     /usr/share/nft-blackhole/nft-blackhole.template
-    /etc/nft-blackhole.conf
+    /usr/local/etc/nft-blackhole.conf
     /usr/lib/systemd/system/nft-blackhole.service
     /usr/lib/systemd/system/nft-blackhole-reload.service
     /usr/lib/systemd/system/nft-blackhole-reload.timer
 
 ## Configuration
 #### Set the configuration in a file
-`/etc/nft-blackhole.conf`
+`/usr/local/etc/nft-blackhole.conf`
 
 ## Usage
 ### Manual
 ##### As root:
-	/usr/bin/nft-blackhole.py start
-	/usr/bin/nft-blackhole.py reload
-	/usr/bin/nft-blackhole.py restart
-	/usr/bin/nft-blackhole.py stop
+	/usr/local/bin/nft-blackhole.py start
+	/usr/local/bin/nft-blackhole.py reload
+	/usr/local/bin/nft-blackhole.py restart
+	/usr/local/bin/nft-blackhole.py stop
 
 ### With systemd
 ##### As root:
@@ -107,7 +107,7 @@ Tested with Debian buster 10
 ### Refresh lists
 #### Manual
 
-    /usr/bin/nft-blackhole.py reload
+    /usr/local/bin/nft-blackhole.py reload
     systemctl reload nft-blackhole.service
 
 #### Crontab
