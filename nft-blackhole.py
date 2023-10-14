@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 
 '''Script to blocking IP in nftables by country and black lists'''
 
@@ -158,6 +158,7 @@ def start():
 def get_urls(urls, max_retries=3, retry_delay=5):
     '''Download url in threads with retry logic'''
     ip_list_aggregated = []
+
     def get_url(url):
         for attempt in range(max_retries):
             try:
