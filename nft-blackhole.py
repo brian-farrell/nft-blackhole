@@ -45,7 +45,7 @@ journal_handler = JournalHandler(SYSLOG_IDENTIFIER=app_name)
 stderr_handler = logging.StreamHandler(stream=sys.stderr)
 
 log_formatter = logging.Formatter(
-    '%(asctime)s.%(msecs)03d - %(levelname)s - %(message)s | %(filename)s > %(module)s > %(funcName)s',
+    '%(asctime)s.%(msecs)03d - %(levelname)s - %(module)s line %(lineno)d: %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
@@ -291,7 +291,7 @@ class Config(object):
 
 def stop():
     """Stopping nft-blackhole"""
-    run(['nft', 'delete', 'table', 'inet', 'blackhole'], check=False)
+    run(['nft', 'delete', 'table', 'inet', 'blackhole'], check=True)
 
 
 def start(config):
@@ -394,7 +394,7 @@ def whitelist_sets(config, reload=False):
                 )
             )
             if reload:
-                run(['nft', 'flush', 'set', 'inet', 'blackhole', set_name], check=False)
+                run(['nft', 'flush', 'set', 'inet', 'blackhole', set_name], check=True)
             if config.whitelist[ip_version]:
                 run(['#!/usr/bin/env', '-S', 'nft', '-f', '-'], input=nft_set.encode(), shell=True, check=True)
 
@@ -416,7 +416,7 @@ def blacklist_sets(config, reload=False):
                 )
             )
             if reload:
-                run(['nft', 'flush', 'set', 'inet', 'blackhole', set_name], check=False)
+                run(['nft', 'flush', 'set', 'inet', 'blackhole', set_name], check=True)
             if ip_list:
                 run(['#!/usr/bin/env', '-S', 'nft', '-f', '-'], input=nft_set.encode(), shell=True, check=True)
 
@@ -447,7 +447,7 @@ def country_sets(config, reload=False):
                 )
             )
             if reload:
-                run(['nft', 'flush', 'set', 'inet', 'blackhole', set_name], check=False)
+                run(['nft', 'flush', 'set', 'inet', 'blackhole', set_name], check=True)
             if ip_list:
                 run(['#!/usr/bin/env', '-S', 'nft', '-f', '-'], input=nft_set.encode(), shell=True, check=True)
 
