@@ -1,122 +1,51 @@
 #!/usr/bin/env python
 
-'''Script to blocking IP in nftables by country and black lists'''
+"""Script to create blocking IP in nftables by country and black lists"""
 
 __author__ = "Tomasz Cebula <tomasz.cebula@gmail.com>"
+__credits__ = ["Brian Farrell"]
 __license__ = "MIT"
-__version__ = "1.4.0"
+__version__ = "1.2.0"
 
 import argparse
-from sys import stderr, exit
-from string import Template
-import urllib.request
-import ssl
-from subprocess import run, DEVNULL
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import logging
+import os
+import re
+import ssl
+from string import Template
+from subprocess import run
+import sys
+from textwrap import dedent
+import urllib.request
 from yaml import safe_load
 import time
 from os.path import exists
 
-desc = 'Daemon blocking IP addresses upon country or blacklist, using nftables'
-parser = argparse.ArgumentParser(description=desc)
-parser.add_argument('action', choices=('start', 'stop', 'restart', 'reload'),
-                    help='Action to nft-blackhole')
-args = parser.parse_args()
-action = args.action
+from systemd.journal import JournalHandler
 
-def stop():
-    '''Stopping nft-blackhole'''
-    run(['nft', 'delete', 'table', 'inet', 'blackhole'], check=False)
+app_name = 'nft-blackhole'
+IP_VERSIONS = ['v4', 'v6']
 
-if action == 'stop':
-    stop()
-    exit(0)
+logger = logging.getLogger(app_name)
 
-# Get config
-config_path = '/etc/nft-blackhole/config.yaml'
-
-# BACKWARD COMPATIBILITY: Legacy configuration file path (/etc/nft-blackhole.conf).
-# Remove this block when migrating fully to /etc/nft-blackhole/config.yaml.
-legacy_config_path = '/etc/nft-blackhole.conf'
-if exists(legacy_config_path):
-    print(f'WARNING: Found legacy configuration file {legacy_config_path}. '
-          f'Please migrate your settings to {config_path} and remove {legacy_config_path}.', file=stderr)
-    config_path = legacy_config_path
-# END BACKWARD COMPATIBILITY
-
-try:
-    with open(config_path) as cnf:
-        config = safe_load(cnf)
-except OSError as exc:
-    print(f'ERROR: Failed to open configuration file {config_path}: {exc}', file=stderr)
-    exit(1)
-
-WHITELIST = config.get('WHITELIST', [])
-BLACKLIST = config.get('BLACKLIST', [])
-COUNTRY_LIST = config['COUNTRY_LIST']
-BLOCK_OUTPUT = config['BLOCK_OUTPUT']
-BLOCK_FORWARD = config['BLOCK_FORWARD']
-COUNTRY_LIST_SOURCE = config.get('COUNTRY_LIST_SOURCE', 'ipverse')
-PRIORITY = config.get('PRIORITY', -1)
-
-
-# Correct incorrect YAML parsing of NO (Norway)
-# It should be the string 'no', but YAML interprets it as False
-# This is a hack due to the lack of YAML 1.2 support by PyYAML
-while False in COUNTRY_LIST:
-    COUNTRY_LIST[COUNTRY_LIST.index(False)] = 'no'
-
-SET_TEMPLATE = ('table inet blackhole {\n\tset ${set_name} {\n\t\ttype ${ip_ver}_addr\n'
-                '\t\tflags interval\n\t\tauto-merge\n\t\telements = { ${ip_list} }\n\t}\n}').expandtabs()
-
-FORWARD_TEMPLATE = ('\tchain forward {\n\t\ttype filter hook forward priority ${priority}; policy ${default_policy};\n'
-                    '\t\tct state established,related accept\n'
-                    '\t\tip saddr @whitelist-v4 counter accept\n'
-                    '\t\tip6 saddr @whitelist-v6 counter accept\n'
-                    '\t\tip saddr @blacklist-v4 counter ${block_policy}\n'
-                    '\t\tip6 saddr @blacklist-v6 counter ${block_policy}\n'
-                    '\t\t${country_ex_ports_rule}\n'
-                    '\t\tip saddr @country-v4 counter ${country_policy}\n'
-                    '\t\tip6 saddr @country-v6 counter ${country_policy}\n'
-                    '\t\tcounter\n\t}').expandtabs()
-
-OUTPUT_TEMPLATE = ('\tchain output {\n\t\ttype filter hook output priority ${priority}; policy accept;\n'
-                   '\t\tip daddr @whitelist-v4 counter accept\n'
-                   '\t\tip6 daddr @whitelist-v6 counter accept\n'
-                   '\t\tip daddr @blacklist-v4 counter ${block_policy}\n'
-                   '\t\tip6 daddr @blacklist-v6 counter ${block_policy}\n\t}').expandtabs()
-
-COUNTRY_EX_PORTS_TEMPLATE = 'meta l4proto { tcp, udp } th dport { ${country_ex_ports} } counter accept'
-
-IP_VER = []
-for ip_v in ['v4', 'v6']:
-    if config['IP_VERSION'][ip_v]:
-        IP_VER.append(ip_v)
-
-BLOCK_POLICY = 'reject' if config['BLOCK_POLICY'] == 'reject' else 'drop'
-COUNTRY_POLICY = 'accept' if config['COUNTRY_POLICY'] == 'accept' else 'block'
-COUNTRY_EXCLUDE_PORTS = config['COUNTRY_EXCLUDE_PORTS']
-
-if COUNTRY_POLICY == 'block':
-    default_policy = 'accept'
-    block_policy = BLOCK_POLICY
-    country_policy = BLOCK_POLICY
+# Get logging level from environment variable if set
+DEBUG_MODE = (os.environ.get('NFT_BH_DEBUG_MODE', 'False') == 'True')
+if DEBUG_MODE:
+    logger.setLevel(logging.DEBUG)
 else:
-    default_policy = BLOCK_POLICY
-    block_policy = BLOCK_POLICY
-    country_policy = 'accept'
+    logger.setLevel(logging.INFO)
 
-if COUNTRY_EXCLUDE_PORTS:
-    country_ex_ports = ', '.join(map(str, config['COUNTRY_EXCLUDE_PORTS']))
-    country_ex_ports_rule = Template(COUNTRY_EX_PORTS_TEMPLATE).substitute(country_ex_ports=country_ex_ports)
-else:
-    country_ex_ports_rule = ''
+journal_handler = JournalHandler(SYSLOG_IDENTIFIER=app_name)
 
-if BLOCK_OUTPUT:
-    chain_output = Template(OUTPUT_TEMPLATE).substitute(priority=PRIORITY,
-                                                        block_policy=block_policy)
-else:
-    chain_output = ''
+log_formatter = logging.Formatter(
+    '%(asctime)s.%(msecs)03d - %(levelname)s - %(message)s | %(filename)s > %(module)s > %(funcName)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+
+journal_handler.setFormatter(log_formatter)
+
+logger.addHandler(journal_handler)
 
 if BLOCK_FORWARD:
     chain_forward = Template(FORWARD_TEMPLATE).substitute(priority=PRIORITY,
@@ -142,40 +71,234 @@ opener.addheaders = [('User-agent', f"Mozilla/5.0 (compatible; nft-blackhole/{__
 urllib.request.install_opener(opener)
 
 
-def start():
-    '''Starting nft-blackhole'''
+class Config(object):
+    """The Config object holds all configuration values.
+
+    The user is able to customize settings via the ``nft-blackhole.yaml`` file, which
+    is located at /usr/local/etc/nft-blackhole.yaml.
+    """
+    COUNTRY_EX_PORTS_TEMPLATE = 'meta l4proto { tcp, udp } th dport { ${country_ex_ports} } counter accept'
+
+    OUTPUT_TEMPLATE = (
+        '\tchain output {\n\t\ttype filter hook output priority -1; policy accept;\n'
+        '\t\tip daddr @whitelist-v4 counter accept\n'
+        '\t\tip6 daddr @whitelist-v6 counter accept\n'
+        '\t\tip daddr @blacklist-v4 counter ${block_policy}\n'
+        '\t\tip6 daddr @blacklist-v6 counter ${block_policy}\n\t}'
+    ).expandtabs()
+
+    SET_TEMPLATE = (
+        'table inet blackhole {\n\tset ${set_name} {\n\t\ttype ${ip_version}_addr\n'
+        '\t\tflags interval\n\t\tauto-merge\n\t\telements = { ${ip_list} }\n\t}\n}'
+    ).expandtabs()
+
+    def __init__(self):
+        self._active_ip_versions = list()
+        self._block_policy = None
+        self._block_output = None
+        self._chain_output = None
+        self._default_policy = None
+        self._whitelist = None
+        self._blacklist = None
+        self._country_list = None
+        self._country_policy = None
+        self._country_exclude_ports = None
+        self._country_exclude_ports_rule = None
+
+        _config = Config._load_config()
+        self._configure(_config)
+
+    @property
+    def active_ip_versions(self):
+        return self._active_ip_versions
+
+    @active_ip_versions.setter
+    def active_ip_versions(self, value):
+        for ip_v in IP_VERSIONS:
+            if value[ip_v]:
+                self._active_ip_versions.append(ip_v)
+
+    @property
+    def block_policy(self):
+        return self._block_policy
+
+    @block_policy.setter
+    def block_policy(self, value):
+        self._block_policy = value
+
+    @property
+    def block_output(self):
+        return self._block_output
+
+    @block_output.setter
+    def block_output(self, value):
+        if value:
+            self.chain_output = Template(self.OUTPUT_TEMPLATE).substitute(block_policy=self.block_policy)
+        else:
+            self.chain_output = ''
+        self._block_output = value
+
+    @property
+    def chain_output(self):
+        return self._chain_output
+
+    @chain_output.setter
+    def chain_output(self, value):
+        self._chain_output = value
+
+    @property
+    def default_policy(self):
+        return self._default_policy
+
+    @default_policy.setter
+    def default_policy(self, value):
+        self._default_policy = value
+
+    @property
+    def whitelist(self):
+        return self._whitelist
+
+    @whitelist.setter
+    def whitelist(self, value):
+        self._whitelist = value
+
+    @property
+    def blacklist(self):
+        return self._blacklist
+
+    @blacklist.setter
+    def blacklist(self, value):
+        self._blacklist = value
+
+    @property
+    def country_list(self):
+        return self._country_list
+
+    @country_list.setter
+    def country_list(self, value):
+        # Correct incorrect YAML parsing of NO (Norway)
+        # It should be the string 'no', but YAML interprets it as False
+        # This is a hack due to the lack of YAML 1.2 support by PyYAML
+        while False in value:
+            value[value.index(False)] = 'no'
+        self._country_list = value
+
+    @property
+    def country_policy(self):
+        return self._country_policy
+
+    @country_policy.setter
+    def country_policy(self, value):
+        if value == 'block':
+            self.default_policy = 'accept'
+        else:
+            self.default_policy = self.block_policy
+        self._country_policy = value
+
+    @property
+    def country_exclude_ports(self):
+        return self._country_exclude_ports
+
+    @country_exclude_ports.setter
+    def country_exclude_ports(self, value):
+        if value:
+            self._country_exclude_ports = ', '.join(map(str, value))
+            self.country_exclude_ports_rule = Template(
+                self.COUNTRY_EX_PORTS_TEMPLATE
+            ).substitute(country_ex_ports=self.country_exclude_ports)
+        else:
+            self.country_exclude_ports_rule = ''
+
+    @property
+    def country_exclude_ports_rule(self):
+        return self._country_exclude_ports_rule
+
+    @country_exclude_ports_rule.setter
+    def country_exclude_ports_rule(self, value):
+        self._country_exclude_ports_rule = value
+
+    def _configure(self, _config):
+        # IP_VERSIONS is a required config value
+        if active_ip_versions := _config.get("IP_VERSIONS"):
+            self.active_ip_versions = active_ip_versions
+        else:
+            # logger.error("The config file does not specify IP_VERSIONS. Exiting.")
+            sys.exit(78)
+
+        self.block_policy = _config.get("BLOCK_POLICY", 'drop')
+        self.block_output = _config.get("BLOCK_OUTPUT", False)
+        self.whitelist = _config.get("WHITELIST")
+        self.blacklist = _config.get("BLACKLIST")
+        self.country_policy = _config.get("COUNTRY_POLICY", 'block')
+        self.country_list = _config.get("COUNTRY_LIST")
+        self.country_exclude_ports = _config.get("COUNTRY_EXCLUDE_PORTS")
+
+    @staticmethod
+    def _load_config():
+        try:
+            # with open('/usr/local/etc/nft-blackhole.yaml', 'r') as stream:
+            with open('nft-blackhole.conf', 'r') as stream:
+                data = safe_load(stream)
+        except FileNotFoundError:
+            # logger.error("No config file found at /usr/local/etc/nft-blackhole.yaml. Exiting.")
+            sys.exit(78)
+        else:
+            return data
+
+    def __str__(self):
+        config = f"""
+
+        IP_VERSIONS: {self.active_ip_versions}
+        BLOCK_POLICY: {self.block_policy}
+        BLOCK_OUTPUT: {self.block_output}
+        chain_output: {self.chain_output}
+        default_policy: {self.default_policy}
+        WHITELIST: {self.whitelist}
+        BLACKLIST: {self.blacklist}
+        COUNTRY_LIST: {self.country_list}
+        COUNTRY_POLICY: {self.country_policy}
+        COUNTRY_EXCLUDE_PORTS: {self.country_exclude_ports}
+        country_exclude_exports_rule: {self.country_exclude_ports_rule}
+
+        """
+        return dedent(config)
+
+
+def stop():
+    """Stopping nft-blackhole"""
+    run(['nft', 'delete', 'table', 'inet', 'blackhole'], check=False)
+
+
+def start(config):
+    """Starting nft-blackhole"""
     nft_template = open('/usr/share/nft-blackhole/nft-blackhole.template').read()
-    nft_conf = Template(nft_template).substitute(priority=PRIORITY,
-                                                 default_policy=default_policy,
-                                                 block_policy=block_policy,
-                                                 country_ex_ports_rule=country_ex_ports_rule,
-                                                 country_policy=country_policy,
-                                                 chain_output=chain_output,
-                                                 chain_forward=chain_forward)
+    nft_conf = Template(nft_template).substitute(
+        default_policy=config.default_policy,
+        block_policy=config.block_policy,
+        country_ex_ports_rule=config.country_ex_ports_rule,
+        country_policy=config.country_policy,
+        chain_output=config.chain_output
+    )
 
     run(['nft', '-f', '-'], input=nft_conf.encode(), check=True)
 
-def get_urls(urls, max_retries=3, retry_delay=5):
-    '''Download url in threads with retry logic'''
+
+def get_urls(urls, do_filter=False):
+    """Download url in threads"""
     ip_list_aggregated = []
 
     def get_url(url):
-        for attempt in range(max_retries):
-            try:
-                response = urllib.request.urlopen(url, timeout=10)
-                content = response.read().decode('utf-8')
-            except BaseException as exc:
-                if attempt < max_retries - 1:
-                    print(f'WARNING: Failed to fetch {url} on attempt {attempt+1}/{max_retries}. Retrying in {retry_delay}s. Error: {exc}', file=stderr)
-                    time.sleep(retry_delay)
-                    continue
-                else:
-                    print(f'ERROR: Failed to fetch {url} after {max_retries} attempts. Giving up. Final error: {exc}', file=stderr)
-                    return None
-            else:
-                return content.splitlines()
-        return None
-
+        try:
+            response = urllib.request.urlopen(url, timeout=10)
+            content = response.read().decode('utf-8')
+        except BaseException as exc:
+            print('ERROR', getattr(exc, 'message', repr(exc)), url, file=sys.stderr)
+            ip_list = []
+        else:
+            if do_filter:
+                content = re.sub(r'^ *(#.*\n?|\n?)', '', content, flags=re.MULTILINE)
+            ip_list = content.splitlines()
+        return ip_list
     with ThreadPoolExecutor(max_workers=8) as executor:
         do_urls = [executor.submit(get_url, url) for url in urls]
         for out in as_completed(do_urls):
@@ -191,125 +314,80 @@ def split_ip_versions(ip_list):
     v4_add = split_ips['v4'].add
     v6_add = split_ips['v6'].add
 
-    for line in ip_list:
-        if '#' in line:
-            line = line.partition('#')[0]
-        parts = line.split()
-        if not parts:
-            continue
-        entry = parts[0]
-        if ':' in entry:
-            v6_add(entry)
-        elif '.' in entry:
-            v4_add(entry)
-
-    return split_ips
-
-
-def load_ip_sources(config_entry):
-    '''Load IP sources: extract direct IPs, read local files, and fetch URLs, splitting into v4 and v6'''
-    if not config_entry:
-        return {'v4': set(), 'v6': set()}
-
-    raw_ips = []
-    file_paths = []
+def get_blacklist(blacklist):
+    """Get blacklists"""
     urls = []
-
-    def to_list(val):
-        if not val:
-            return []
-        if isinstance(val, list):
-            return val
-        return [val]
-
-    if isinstance(config_entry, dict):
-        if any(k in config_entry for k in ('static', 'file', 'url')):
-            raw_ips.extend(to_list(config_entry.get('static')))
-            file_paths.extend(to_list(config_entry.get('file')))
-            urls.extend(to_list(config_entry.get('url')))
-        else:
-            # BACKWARD COMPATIBILITY: Legacy dictionary format (v4, v6).
-            # Remove this block when migrating fully to static/file/url format.
-            for key in ['v4', 'v6']:
-                for item in to_list(config_entry.get(key)):
-                    item_str = str(item).strip()
-                    if item_str.startswith(('http://', 'https://')):
-                        urls.append(item_str)
-                    else:
-                        raw_ips.append(item_str)
-            # END BACKWARD COMPATIBILITY
-    elif isinstance(config_entry, list):
-        # BACKWARD COMPATIBILITY: Flat list format.
-        # Remove this block when migrating fully to static/file/url format.
-        for item in config_entry:
-            if not item:
-                continue
-            item_str = str(item).strip()
-            if item_str.startswith(('http://', 'https://')):
-                urls.append(item_str)
-            else:
-                raw_ips.append(item_str)
-        # END BACKWARD COMPATIBILITY
-
-    # Read local files
-    for filepath in file_paths:
-        if not filepath:
-            continue
-        filepath = str(filepath).strip()
-        if not filepath or filepath.startswith('#'):
-            continue
-        try:
-            with open(filepath, 'r') as f:
-                raw_ips.extend(f.readlines())
-        except OSError as exc:
-            print(f'ERROR: Failed to read local file {filepath}: {exc}', file=stderr)
-            return None
-
-    # Fetch URLs
-    if urls:
-        clean_urls = []
-        for u in urls:
-            if not u:
-                continue
-            u_str = str(u).strip()
-            if u_str and not u_str.startswith('#'):
-                clean_urls.append(u_str)
-        if clean_urls:
-            unique_urls = list(dict.fromkeys(clean_urls))
-            downloaded = get_urls(unique_urls)
-            if downloaded is None:
-                return None
-            raw_ips.extend(downloaded)
-
-    return split_ip_versions(raw_ips)
+    for bl_url in blacklist:
+        urls.append(bl_url)
+    ips = get_urls(urls, do_filter=True)
+    return ips
 
 
-def get_country_ips():
-    '''Fetch country IP lists based on configured source and return dict per IP version'''
-    if not COUNTRY_LIST:
-        return {'v4': set(), 'v6': set()}
-
+def get_country_ip_list(country_list, ip_version):
+    """Get country lists from GitHub @herrbischoff"""
     urls = []
-    for ip_ver in IP_VER:
-        for country in COUNTRY_LIST:
-            c_lower = country.lower()
-            if COUNTRY_LIST_SOURCE == 'ebrasha':
-                c_upper = country.upper()
-                url = f'https://raw.githubusercontent.com/ebrasha/cidr-ip-ranges-by-country/refs/heads/master/CIDR/{c_upper}-ip{ip_ver}-Hackers.Zone.txt'
-            elif COUNTRY_LIST_SOURCE == 'ipdeny':
-                if ip_ver == 'v4':
-                    url = f'https://www.ipdeny.com/ipblocks/data/aggregated/{c_lower}-aggregated.zone'
-                else:
-                    url = f'https://www.ipdeny.com/ipv6/ipaddresses/aggregated/{c_lower}-aggregated.zone'
-            else:  # ipverse
-                url = f'https://raw.githubusercontent.com/ipverse/geo-ip-blocks/refs/heads/master/country/{c_lower}/{c_lower}-ip{ip_ver}.txt'
-            urls.append(url)
+    for country in country_list:
+        url = (
+            f'https://raw.githubusercontent.com/herrbischoff/country-ip-blocks/'
+            f'master/ip{ip_version}/{country.lower()}.cidr'
+        )
+        urls.append(url)
+    ips = get_urls(urls)
+    return ips
+
+
+# TODO: This function is not called
+def get_country_ip_list2(country_list, ip_version):
+    """Get country lists from ipdeny.com"""
+    urls = []
+    for country in country_list:
+        if ip_version == 'v4':
+            url = f'http://ipdeny.com/ipblocks/data/aggregated/{country.lower()}-aggregated.zone'
+        elif ip_version == 'v6':
+            url = f'http://ipdeny.com/ipv6/ipaddresses/aggregated/{country.lower()}-aggregated.zone'
+        urls.append(url)
+    ips = get_urls(urls)
+    return ips
+
+
+def whitelist_sets(config, reload=False):
+    """Create whitelist sets"""
+    for ip_version in config.active_ip_versions:
+        whitelist = config.whitelist.get(ip_version)
+        if whitelist:
+            set_name = f'whitelist-{ip_version}'
+            set_list = ', '.join(whitelist)
+            nft_set = (
+                Template(config.SET_TEMPLATE).substitute(
+                    ip_version=f'ip{ip_version}', set_name=set_name, ip_list=set_list
+                )
+            )
+            if reload:
+                run(['nft', 'flush', 'set', 'inet', 'blackhole', set_name], check=False)
+            if config.whitelist[ip_version]:
+                run(['nft', '-f', '-'], input=nft_set.encode(), check=True)
 
     raw_ips = get_urls(urls)
     if raw_ips is None:
         return None
 
-    return split_ip_versions(raw_ips)
+def blacklist_sets(config, reload=False):
+    """Create blacklist sets"""
+    for ip_version in config.active_ip_versions:
+        blacklist = config.blacklist.get(ip_version)
+        if blacklist:
+            set_name = f'blacklist-{ip_version}'
+            ip_list = get_blacklist(config.blacklist[ip_version])
+            set_list = ', '.join(ip_list)
+            nft_set = (
+                Template(config.SET_TEMPLATE).substitute(
+                    ip_version=f'ip{ip_version}', set_name=set_name, ip_list=set_list
+                )
+            )
+            if reload:
+                run(['nft', 'flush', 'set', 'inet', 'blackhole', set_name], check=False)
+            if ip_list:
+                run(['nft', '-f', '-'], input=nft_set.encode(), check=True)
 
 def apply_nft_sets(ip_data, reload=False):
     '''Create all nftables sets (whitelist, blacklist, country)'''
@@ -324,11 +402,23 @@ def apply_nft_sets(ip_data, reload=False):
             if ip_list:
                 run(['nft', '-f', '-'], input=nft_set.encode(), check=True)
 
-def fetch_all_lists():
-    '''Fetch all whitelist, blacklist and country lists with validation'''
-    whitelist_ips = load_ip_sources(WHITELIST)
-    if whitelist_ips is None:
-        return None
+def country_sets(config, reload=False):
+    """Create country sets"""
+    country_list = config.country_list
+    if country_list:
+        for ip_version in config.active_ip_versions:
+            set_name = f'country-{ip_version}'
+            ip_list = get_country_ip_list(config.country_list, ip_version)
+            set_list = ', '.join(ip_list)
+            nft_set = (
+                Template(config.SET_TEMPLATE).substitute(
+                    ip_version=f'ip{ip_version}', set_name=set_name, ip_list=set_list
+                )
+            )
+            if reload:
+                run(['nft', 'flush', 'set', 'inet', 'blackhole', set_name], check=False)
+            if ip_list:
+                run(['nft', '-f', '-'], input=nft_set.encode(), check=True)
 
     blacklist_ips = load_ip_sources(BLACKLIST)
     if blacklist_ips is None:
@@ -339,30 +429,35 @@ def fetch_all_lists():
         return None
     return {'whitelist': whitelist_ips, 'blacklist': blacklist_ips, 'country': country_ips}
 
-# Main
-if action == 'start':
-    ip_data = fetch_all_lists()
-    if ip_data is None:
-        print('ERROR: Failed to fetch lists, aborting start', file=stderr)
-        exit(1)
-    start()
-    apply_nft_sets(ip_data)
-elif action == 'restart':
-    ip_data = fetch_all_lists()
-    if ip_data is None:
-        print('ERROR: Failed to fetch lists, cleaning up and aborting restart', file=stderr)
+def main():
+    config = Config()
+    desc = 'Script to blocking IP in nftables by country and black lists'
+    parser = argparse.ArgumentParser(description=desc)
+    parser.add_argument('action', choices=('start', 'stop', 'restart', 'reload', 'config'),
+                        help='Action to nft-blackhole')
+    args = parser.parse_args()
+    action = args.action
+
+    if action == 'start':
+        start(config)
+        whitelist_sets(config)
+        blacklist_sets(config)
+        country_sets(config)
+    elif action == 'stop':
         stop()
-        exit(1)
-    stop()
-    start()
-    apply_nft_sets(ip_data)
-elif action == 'reload':
-    ip_data = fetch_all_lists()
-    if ip_data is None:
-        print('ERROR: Failed to fetch lists, skipping reload', file=stderr)
-        exit(1)
-    result = run(['nft', 'list', 'chain', 'inet', 'blackhole', 'input'],
-                 stdout=DEVNULL, stderr=DEVNULL, check=False)
-    if result.returncode != 0:
-        start()
-    apply_nft_sets(ip_data, reload=True)
+    elif action == 'restart':
+        stop()
+        start(config)
+        whitelist_sets(config)
+        blacklist_sets(config)
+        country_sets(config)
+    elif action == 'reload':
+        whitelist_sets(config, reload=True)
+        blacklist_sets(config, reload=True)
+        country_sets(config, reload=True)
+    elif action == 'config':
+        print(config)
+
+
+if __name__ == '__main__':
+    main()
