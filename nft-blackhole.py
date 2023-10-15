@@ -236,6 +236,7 @@ class Config(object):
             logger.error("No config file found at /usr/local/etc/nft-blackhole.yaml. Exiting.")
             sys.exit(78)
         else:
+            logger.info(f"Config loaded from {cls.NFT_BLACKHOLE_CONFIG}")
             return data
 
     def __str__(self):
