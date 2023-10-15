@@ -67,7 +67,7 @@ class Config(object):
     The user is able to customize settings via the ``nft-blackhole.yaml`` file, which
     is located at /usr/local/etc/nft-blackhole.yaml.
     """
-    COUNTRY_EX_PORTS_TEMPLATE = 'meta l4proto { tcp, udp } th dport { ${country_ex_ports} } counter accept'
+    COUNTRY_EX_PORTS_TEMPLATE = 'meta l4proto { tcp, udp } th dport { ${country_exclude_ports} } counter accept'
 
     NFT_BLACKHOLE_CONFIG = '/usr/local/etc/nft-blackhole.yaml'
 
@@ -199,7 +199,7 @@ class Config(object):
             self._country_exclude_ports = ', '.join(map(str, value))
             self.country_exclude_ports_rule = Template(
                 self.COUNTRY_EX_PORTS_TEMPLATE
-            ).substitute(country_ex_ports=self.country_exclude_ports)
+            ).substitute(country_exclude_ports=self.country_exclude_ports)
         else:
             self.country_exclude_ports_rule = ''
 
@@ -265,11 +265,12 @@ def stop():
 
 def start(config):
     """Starting nft-blackhole"""
+    logger.info("Starting blackhole")
     nft_template = open(config.NFT_TEMPLATE).read()
     nft_conf = Template(nft_template).substitute(
         default_policy=config.default_policy,
         block_policy=config.block_policy,
-        country_ex_ports_rule=config.country_ex_ports_rule,
+        country_exclude_ports_rule=config.country_exclude_ports_rule,
         country_policy=config.country_policy,
         chain_output=config.chain_output
     )
@@ -279,6 +280,7 @@ def start(config):
 
 def get_urls(urls, do_filter=False):
     """Download url in threads"""
+    logger.info("Getting URLs")
     ip_list_aggregated = []
 
     def get_url(url):
@@ -314,6 +316,7 @@ def get_country_ip_list(country_list, ip_version):
     """Get country lists from GitHub @herrbischoff"""
     urls = []
     for country in country_list:
+        logger.info(f"Getting blocklist for country: {country}")
         url = (
             f'https://raw.githubusercontent.com/herrbischoff/country-ip-blocks/'
             f'master/ip{ip_version}/{country.lower()}.cidr'
