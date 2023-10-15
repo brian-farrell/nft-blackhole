@@ -3,9 +3,9 @@
 """Script to create blocking IP in nftables by country and black lists"""
 
 __author__ = "Tomasz Cebula <tomasz.cebula@gmail.com>"
-__credits__ = ["Brian Farrell"]
+__credits__ = ["Brian Farrell <brian.farrell@me.com>"]
 __license__ = "MIT"
-__version__ = "1.2.0"
+__version__ = "1.2.1"
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -68,6 +68,10 @@ class Config(object):
     is located at /usr/local/etc/nft-blackhole.yaml.
     """
     COUNTRY_EX_PORTS_TEMPLATE = 'meta l4proto { tcp, udp } th dport { ${country_ex_ports} } counter accept'
+
+    NFT_BLACKHOLE_CONFIG = '/usr/local/etc/nft-blackhole.yaml'
+
+    NFT_TEMPLATE = '/usr/local/share/nft-blackhole/nft-blackhole.template'
 
     OUTPUT_TEMPLATE = (
         '\tchain output {\n\t\ttype filter hook output priority -1; policy accept;\n'
@@ -212,7 +216,7 @@ class Config(object):
         if active_ip_versions := _config.get("IP_VERSIONS"):
             self.active_ip_versions = active_ip_versions
         else:
-            # logger.error("The config file does not specify IP_VERSIONS. Exiting.")
+            logger.error("The config file does not specify IP_VERSIONS. Exiting.")
             sys.exit(78)
 
         self.block_policy = _config.get("BLOCK_POLICY", 'drop')
@@ -223,14 +227,13 @@ class Config(object):
         self.country_list = _config.get("COUNTRY_LIST")
         self.country_exclude_ports = _config.get("COUNTRY_EXCLUDE_PORTS")
 
-    @staticmethod
-    def _load_config():
+    @classmethod
+    def _load_config(cls):
         try:
-            # with open('/usr/local/etc/nft-blackhole.yaml', 'r') as stream:
-            with open('nft-blackhole.conf', 'r') as stream:
+            with open(cls.NFT_BLACKHOLE_CONFIG, 'r') as stream:
                 data = safe_load(stream)
         except FileNotFoundError:
-            # logger.error("No config file found at /usr/local/etc/nft-blackhole.yaml. Exiting.")
+            logger.error("No config file found at /usr/local/etc/nft-blackhole.yaml. Exiting.")
             sys.exit(78)
         else:
             return data
@@ -261,7 +264,7 @@ def stop():
 
 def start(config):
     """Starting nft-blackhole"""
-    nft_template = open('/usr/share/nft-blackhole/nft-blackhole.template').read()
+    nft_template = open(config.NFT_TEMPLATE).read()
     nft_conf = Template(nft_template).substitute(
         default_policy=config.default_policy,
         block_policy=config.block_policy,
