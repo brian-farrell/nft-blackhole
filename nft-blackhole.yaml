@@ -20,7 +20,6 @@ BLOCK_OUTPUT: off
 WHITELIST:
   v4:
     - 127.0.0.1
-    - 10.9.8.0/24
     - 192.168.0.1/24
   v6:
     - '2a02:8060::/31'
@@ -40,7 +39,6 @@ BLACKLIST:
 # https://en.wikipedia.org/wiki/ISO_3166-1_alpha-2#Officially_assigned_code_elements
 COUNTRY_LIST:
   - cn
-  - vn
 
 # Country policy: 'block' or 'accept', default: 'block'
 # block - block coutries from list, accept others
