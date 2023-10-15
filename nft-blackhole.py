@@ -18,15 +18,19 @@ from subprocess import run
 import sys
 from textwrap import dedent
 import urllib.request
+
+from jinja2 import Environment, FileSystemLoader, select_autoescape
+from systemd.journal import JournalHandler
 from yaml import safe_load
 import time
 from os.path import exists
 
-from systemd.journal import JournalHandler
-
 app_name = 'nft-blackhole'
-IP_VERSIONS = ['v4', 'v6']
 
+
+"""
+LOGGING
+"""
 logger = logging.getLogger(app_name)
 
 # Get logging level from environment variable if set
@@ -47,6 +51,7 @@ journal_handler.setFormatter(log_formatter)
 
 logger.addHandler(journal_handler)
 
+<<<<<<< HEAD
 if BLOCK_FORWARD:
     chain_forward = Template(FORWARD_TEMPLATE).substitute(priority=PRIORITY,
                                                           default_policy=default_policy,
@@ -57,6 +62,12 @@ else:
     chain_forward = ''
 
 # Setting urllib
+=======
+
+"""
+urllib config
+"""
+>>>>>>> 7422eb0 (Transition to Jinja2 templating.)
 ctx = ssl.create_default_context()
 IGNORE_CERTIFICATE = False
 if IGNORE_CERTIFICATE:
@@ -78,9 +89,8 @@ class Config(object):
     is located at /usr/local/etc/nft-blackhole.yaml.
     """
     COUNTRY_EX_PORTS_TEMPLATE = 'meta l4proto { tcp, udp } th dport { ${country_exclude_ports} } counter accept'
-
+    IP_VERSIONS = ['v4', 'v6']
     NFT_BLACKHOLE_CONFIG = '/usr/local/etc/nft-blackhole.yaml'
-
     NFT_TEMPLATE = '/usr/local/share/nft-blackhole/nft-blackhole.template'
 
     OUTPUT_TEMPLATE = (
@@ -112,13 +122,20 @@ class Config(object):
         _config = Config._load_config()
         self._configure(_config)
 
+        self.jinja_env = Environment(
+            loader=FileSystemLoader("/usr/local/share/nft-blackhole"),
+            autoescape=select_autoescape(),
+            trim_blocks=True,
+            lstrip_blocks=True
+        )
+
     @property
     def active_ip_versions(self):
         return self._active_ip_versions
 
     @active_ip_versions.setter
     def active_ip_versions(self, value):
-        for ip_v in IP_VERSIONS:
+        for ip_v in self.IP_VERSIONS:
             if value[ip_v]:
                 self._active_ip_versions.append(ip_v)
 
@@ -276,8 +293,8 @@ def stop():
 def start(config):
     """Starting nft-blackhole"""
     logger.info("Starting blackhole")
-    nft_template = open(config.NFT_TEMPLATE).read()
-    nft_conf = Template(nft_template).substitute(
+    nft_template = config.jinja_env.get_template("nft-blackhole.j2")
+    nft_conf = nft_template.render(
         default_policy=config.default_policy,
         block_policy=config.block_policy,
         country_exclude_ports_rule=config.country_exclude_ports_rule,
