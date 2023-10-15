@@ -17,6 +17,7 @@ from string import Template
 from subprocess import run
 import sys
 from textwrap import dedent
+from urllib.error import HTTPError
 import urllib.request
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -39,6 +40,7 @@ else:
     logger.setLevel(logging.INFO)
 
 journal_handler = JournalHandler(SYSLOG_IDENTIFIER=app_name)
+stderr_handler = logging.StreamHandler(stream=sys.stderr)
 
 log_formatter = logging.Formatter(
     '%(asctime)s.%(msecs)03d - %(levelname)s - %(message)s | %(filename)s > %(module)s > %(funcName)s',
@@ -46,8 +48,10 @@ log_formatter = logging.Formatter(
 )
 
 journal_handler.setFormatter(log_formatter)
+stderr_handler.setFormatter(log_formatter)
 
 logger.addHandler(journal_handler)
+logger.addHandler(stderr_handler)
 
 
 """
@@ -288,6 +292,9 @@ def start(config):
         chain_output=config.chain_output
     )
 
+    # Changed command to use #!/usr/bin/env with -S option in order to avoid errors with `nft` invocation
+    # Added shell=True so that we could pass the shebang
+    # see: https://bugzilla.netfilter.org/show_bug.cgi?id=1135#c3
     run(['#!/usr/bin/env', '-S', 'nft', '-f', '-'], input=nft_conf.encode(), shell=True, check=True)
 
 
@@ -300,8 +307,8 @@ def get_urls(urls, do_filter=False):
         try:
             response = urllib.request.urlopen(url, timeout=10)
             content = response.read().decode('utf-8')
-        except BaseException as exc:
-            print('ERROR', getattr(exc, 'message', repr(exc)), url, file=sys.stderr)
+        except HTTPError as e:
+            logger.error(f"HTTP error {e.code} {e.reason} {e.url}")
             ip_list = []
         else:
             if do_filter:
@@ -368,7 +375,7 @@ def whitelist_sets(config, reload=False):
             if reload:
                 run(['nft', 'flush', 'set', 'inet', 'blackhole', set_name], check=False)
             if config.whitelist[ip_version]:
-                run(['nft', '-f', '-'], input=nft_set.encode(), check=True)
+                run(['#!/usr/bin/env', '-S', 'nft', '-f', '-'], input=nft_set.encode(), shell=True, check=True)
 
 
 def blacklist_sets(config, reload=False):
@@ -387,7 +394,7 @@ def blacklist_sets(config, reload=False):
             if reload:
                 run(['nft', 'flush', 'set', 'inet', 'blackhole', set_name], check=False)
             if ip_list:
-                run(['nft', '-f', '-'], input=nft_set.encode(), check=True)
+                run(['#!/usr/bin/env', '-S', 'nft', '-f', '-'], input=nft_set.encode(), shell=True, check=True)
 
 
 def country_sets(config, reload=False):
@@ -406,7 +413,7 @@ def country_sets(config, reload=False):
             if reload:
                 run(['nft', 'flush', 'set', 'inet', 'blackhole', set_name], check=False)
             if ip_list:
-                run(['nft', '-f', '-'], input=nft_set.encode(), check=True)
+                run(['#!/usr/bin/env', '-S', 'nft', '-f', '-'], input=nft_set.encode(), shell=True, check=True)
 
 
 def main():
