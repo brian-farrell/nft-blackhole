@@ -55,42 +55,27 @@ stderr_handler.setFormatter(log_formatter)
 logger.addHandler(journal_handler)
 logger.addHandler(stderr_handler)
 
-<<<<<<< HEAD
-if BLOCK_FORWARD:
-    chain_forward = Template(FORWARD_TEMPLATE).substitute(priority=PRIORITY,
-                                                          default_policy=default_policy,
-                                                          block_policy=block_policy,
-                                                          country_policy=country_policy,
-                                                          country_ex_ports_rule=country_ex_ports_rule)
-else:
-    chain_forward = ''
-
-# Setting urllib
-=======
 
 """
 urllib config
 """
->>>>>>> 7422eb0 (Transition to Jinja2 templating.)
-ctx = ssl.create_default_context()
 IGNORE_CERTIFICATE = False
+ctx = ssl.create_default_context()
+
 if IGNORE_CERTIFICATE:
     ctx.check_hostname = False
     ctx.verify_mode = ssl.CERT_NONE
 
 https_handler = urllib.request.HTTPSHandler(context=ctx)
-
 opener = urllib.request.build_opener(https_handler)
-opener.addheaders = [('User-agent', f"Mozilla/5.0 (compatible; nft-blackhole/{__version__}; "
+opener.addheaders = [('User-agent', 'Mozilla/5.0 (compatible; nft-blackhole/0.1.0; '
                       '+https://github.com/tomasz-c/nft-blackhole)')]
 urllib.request.install_opener(opener)
 
 
 class Config(object):
     """The Config object holds all configuration values.
-
-    The user is able to customize settings via the ``nft-blackhole.yaml`` file, which
-    is located at /usr/local/etc/nft-blackhole.yaml.
+    The user is able to customize settings in /usr/local/etc/nft-blackhole.yaml.
     """
     COUNTRY_EX_PORTS_TEMPLATE = 'meta l4proto { tcp, udp } th dport { ${country_exclude_ports} } counter accept'
     IP_VERSIONS = ['v4', 'v6']
@@ -201,7 +186,7 @@ class Config(object):
 
     @country_list.setter
     def country_list(self, value):
-        # Correct incorrect YAML parsing of NO (Norway)
+        # Correct incorrect YAML parsing of no (Norway)
         # It should be the string 'no', but YAML interprets it as False
         # This is a hack due to the lack of YAML 1.2 support by PyYAML
         while False in value:
@@ -307,7 +292,7 @@ def start(config):
 
 
 def get_urls(urls, do_filter=False):
-    """Download url in threads"""
+    """Download urls in threads"""
     ip_list_aggregated = []
 
     def get_url(url):
@@ -323,6 +308,7 @@ def get_urls(urls, do_filter=False):
                 content = re.sub(r'^ *(#.*\n?|\n?)', '', content, flags=re.MULTILINE)
             ip_list = content.splitlines()
         return ip_list
+
     with ThreadPoolExecutor(max_workers=8) as executor:
         do_urls = [executor.submit(get_url, url) for url in urls]
         for out in as_completed(do_urls):
@@ -330,6 +316,7 @@ def get_urls(urls, do_filter=False):
             if ip_list is None:
                 return None
             ip_list_aggregated += ip_list
+
     return ip_list_aggregated
 
 def split_ip_versions(ip_list):
@@ -344,6 +331,7 @@ def get_blacklist(blacklist):
     for bl_url in blacklist:
         urls.append(bl_url)
     ips = get_urls(urls, do_filter=True)
+
     return ips
 
 
@@ -358,20 +346,7 @@ def get_country_ip_list(country_list, ip_version):
         )
         urls.append(url)
     ips = get_urls(urls)
-    return ips
 
-
-# TODO: This function is not called
-def get_country_ip_list2(country_list, ip_version):
-    """Get country lists from ipdeny.com"""
-    urls = []
-    for country in country_list:
-        if ip_version == 'v4':
-            url = f'http://ipdeny.com/ipblocks/data/aggregated/{country.lower()}-aggregated.zone'
-        elif ip_version == 'v6':
-            url = f'http://ipdeny.com/ipv6/ipaddresses/aggregated/{country.lower()}-aggregated.zone'
-        urls.append(url)
-    ips = get_urls(urls)
     return ips
 
 
