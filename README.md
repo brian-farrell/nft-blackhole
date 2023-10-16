@@ -5,8 +5,6 @@ Script / daemon to blocking IP in nftables by country and black lists.
 
 - [Overview](#overview)
 - [Installation](#installation)
-  - [Arch Linux Users](#arch-linux-users)
-  - [Debian Linux Users](#debian-linux-users)
   - [Manual](#manual)
 - [Configuration](#configuration)
     - [Set the configuration in a file](#set-the-configuration-in-a-file)
@@ -38,52 +36,26 @@ Script / daemon to blocking IP in nftables by country and black lists.
 - ports excluded from country blocks
 
 ## Installation
-### Arch Linux Users
-##### Install from AUR package `nft-blackhole`
-For example:
-
-    yay -S nft-blackhole
-    pikaur -S nft-blackhole
-
-### Debian Linux Users
-Tested with Debian buster 10
-
-##### Download the debian-10 branch of this repository
-
-    git clone -b debian-10 https://github.com/tomasz-c/nft-blackhole.git
-
-##### Install requirements
-
-    sudo apt install nftables python3-yaml
-
-##### Install files
-
-    sudo cp nft-blackhole.conf /usr/local/etc/
-    sudo cp nft-blackhole.py   /usr/local/bin/
-    sudo mkdir /usr/share/nft-blackhole
-    sudo cp nft-blackhole.template /usr/share/nft-blackhole/
-    sudo cp nft-blackhole.service        /lib/systemd/system/
-    sudo cp nft-blackhole-reload.service /lib/systemd/system/
-    sudo cp nft-blackhole-reload.timer   /lib/systemd/system/
-
 ### Manual
 ##### Requirements
 - nftables
-- python 3.6+
-- python-yaml
+- python 3.8+
+- python3-jinja2
+- python3-pyyaml
+- python3-systemd
 - systemd (for daemon)
 
 ##### File location
     /usr/local/bin/nft-blackhole.py
-    /usr/share/nft-blackhole/nft-blackhole.template
-    /usr/local/etc/nft-blackhole.conf
-    /usr/lib/systemd/system/nft-blackhole.service
-    /usr/lib/systemd/system/nft-blackhole-reload.service
-    /usr/lib/systemd/system/nft-blackhole-reload.timer
+    /usr/local/share/nft-blackhole/nft-blackhole.j2
+    /usr/local/etc/nft-blackhole.yaml
+    /usr/local/lib/systemd/system/nft-blackhole.service
+    /usr/local/lib/systemd/system/nft-blackhole-reload.service
+    /usr/local/lib/systemd/system/nft-blackhole-reload.timer
 
 ## Configuration
 #### Set the configuration in a file
-`/usr/local/etc/nft-blackhole.conf`
+`/usr/local/etc/nft-blackhole.yaml`
 
 ## Usage
 ### Manual
