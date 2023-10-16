@@ -214,7 +214,7 @@ class Config(object):
 
     @country_policy.setter
     def country_policy(self, value):
-        if value == 'block':
+        if value == 'drop':
             self.default_policy = 'accept'
         else:
             self.default_policy = self.block_policy
@@ -306,11 +306,7 @@ def start(config):
         chain_output=config.chain_output
     )
 
-    # Changed command to use #!/usr/bin/env with -S option in order to avoid errors with `nft` invocation
-    # Added shell=True so that we could pass the shebang
-    # see: https://bugzilla.netfilter.org/show_bug.cgi?id=1135#c3
-    run(['#!/usr/bin/env', '-S', 'nft', '-f', '-'], input=nft_conf.encode(), shell=True, check=True)
-
+    run(['nft', '-f', '-'], input=nft_conf.encode(), check=True)
 
 def get_urls(urls, do_filter=False):
     """Download url in threads"""
@@ -396,7 +392,7 @@ def whitelist_sets(config, reload=False):
             if reload:
                 run(['nft', 'flush', 'set', 'inet', 'blackhole', set_name], check=True)
             if config.whitelist[ip_version]:
-                run(['#!/usr/bin/env', '-S', 'nft', '-f', '-'], input=nft_set.encode(), shell=True, check=True)
+                run(['nft', '-f', '-'], input=nft_set.encode(), check=True)
 
     raw_ips = get_urls(urls)
     if raw_ips is None:
@@ -418,7 +414,7 @@ def blacklist_sets(config, reload=False):
             if reload:
                 run(['nft', 'flush', 'set', 'inet', 'blackhole', set_name], check=True)
             if ip_list:
-                run(['#!/usr/bin/env', '-S', 'nft', '-f', '-'], input=nft_set.encode(), shell=True, check=True)
+                run(['nft', '-f', '-'], input=nft_set.encode(), check=True)
 
 def apply_nft_sets(ip_data, reload=False):
     '''Create all nftables sets (whitelist, blacklist, country)'''
@@ -449,7 +445,7 @@ def country_sets(config, reload=False):
             if reload:
                 run(['nft', 'flush', 'set', 'inet', 'blackhole', set_name], check=True)
             if ip_list:
-                run(['#!/usr/bin/env', '-S', 'nft', '-f', '-'], input=nft_set.encode(), shell=True, check=True)
+                run(['nft', '-f', '-'], input=nft_set.encode(), check=True)
 
     blacklist_ips = load_ip_sources(BLACKLIST)
     if blacklist_ips is None:
