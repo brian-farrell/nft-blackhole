@@ -8,7 +8,9 @@ Type=oneshot
 RemainAfterExit=yes
 ExecStart=/usr/local/sbin/nft-blackhole.py start
 ExecStop=/usr/local/sbin/nft-blackhole.py stop
+
 ExecReload=/usr/local/sbin/nft-blackhole.py reload
+
 User=root
 
 [Install]

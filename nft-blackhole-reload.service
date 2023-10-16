@@ -6,4 +6,9 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+<<<<<<< HEAD
 ExecStart=/usr/local/sbin/nft-blackhole.py reload
+=======
+Environment=LAUNCHED_BY_SYSTEMD=True
+ExecStart=/usr/local/bin/nft-blackhole.py reload
+>>>>>>> cb40001 (Deduplicate logging records in systemd)
