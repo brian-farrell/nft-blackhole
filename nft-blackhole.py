@@ -39,21 +39,18 @@ if DEBUG_MODE:
 else:
     logger.setLevel(logging.INFO)
 
-journal_handler = JournalHandler(SYSLOG_IDENTIFIER=app_name)
-stderr_handler = logging.StreamHandler(stream=sys.stderr)
-
-stderr_log_formatter = logging.Formatter(
-    '%(asctime)s.%(msecs)03d - %(levelname)s - %(module)s line %(lineno)d: %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
-
-journal_log_formatter = logging.Formatter('%(levelname)s - %(module)s line %(lineno)d: %(message)s')
-
-journal_handler.setFormatter(journal_log_formatter)
-stderr_handler.setFormatter(stderr_log_formatter)
-
-logger.addHandler(journal_handler)
-logger.addHandler(stderr_handler)
+LAUNCHED_BY_SYSTEMD = bool(os.getenv('LAUNCHED_BY_SYSTEMD', False))
+if LAUNCHED_BY_SYSTEMD:
+    log_handler = JournalHandler(SYSLOG_IDENTIFIER=app_name)
+    log_formatter = logging.Formatter('%(levelname)s - %(module)s line %(lineno)d: %(message)s')
+else:
+    log_handler = logging.StreamHandler(stream=sys.stderr)
+    log_formatter = logging.Formatter(
+        '%(asctime)s.%(msecs)03d - %(levelname)s - %(module)s line %(lineno)d: %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+log_handler.setFormatter(log_formatter)
+logger.addHandler(log_handler)
 
 
 """
