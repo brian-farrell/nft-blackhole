@@ -5,8 +5,7 @@ Daemon blocking IP addresses upon country or blacklist, using nftables
 ## Table of contents
 - [Overview](#overview)
 - [Installation](#installation)
-  - [Arch Linux](#arch-linux)
-  - [Other Linux distributions](#other-linux-distributions)
+  - [Manual](#manual)
 - [Configuration](#configuration)
 - [Usage](#usage)
   - [Manual](#manual)
@@ -41,74 +40,26 @@ Daemon blocking IP addresses upon country or blacklist, using nftables
 - ports excluded from country blocks
 
 ## Installation
-### Arch Linux
-##### Install from AUR package `nft-blackhole`
-For example:
-
-```shell
-yay -S nft-blackhole
-paru -S nft-blackhole
-pikaur -S nft-blackhole
-```
-
-### Other Linux distributions
-##### Download this repository
-
-```shell
-git clone https://github.com/tomasz-c/nft-blackhole.git
-```
-
-##### Install requirements
-
-- `nftables`
-- PyYAML:
-    - `python3-yaml` (Debian/Ubuntu)
-    - `python3-pyyaml` (CentOS/Fedora/AlmaLinux/Rocky Linux)
-    - `python3-PyYAML` (openSUSE)
-    - `py3-yaml` (Alpine Linux)
-
-##### Install files
-```shell
-sudo mkdir -p /etc/nft-blackhole
-sudo cp -i config.yaml /etc/nft-blackhole/
-sudo cp -i nft-blackhole.py   /usr/local/sbin/
-sudo mkdir /usr/share/nft-blackhole
-sudo cp -i nft-blackhole.template /usr/share/nft-blackhole/
-sudo cp -i nft-blackhole.service        /lib/systemd/system/
-sudo cp -i nft-blackhole-reload.service /lib/systemd/system/
-sudo cp -i nft-blackhole-reload.timer   /lib/systemd/system/
-```
-
-Check for existing installation:
-```bash
-[[ -f /usr/bin/nft-blackhole.py ]] && echo "BEWARE, another version is already installed"
-```
-
-## Configuration
-#### Set the configuration in a file
-`/etc/nft-blackhole/config.yaml`
-    sudo cp nft-blackhole.conf /usr/local/etc/
-    sudo cp nft-blackhole.py   /usr/local/bin/
-    sudo mkdir /usr/share/nft-blackhole
-    sudo cp nft-blackhole.template /usr/share/nft-blackhole/
-    sudo cp nft-blackhole.service        /lib/systemd/system/
-    sudo cp nft-blackhole-reload.service /lib/systemd/system/
-    sudo cp nft-blackhole-reload.timer   /lib/systemd/system/
-
 ### Manual
 ##### Requirements
 - nftables
-- python 3.6+
-- python-yaml
+- python 3.8+
+- python3-jinja2
+- python3-pyyaml
+- python3-systemd
 - systemd (for daemon)
 
 ##### File location
     /usr/local/bin/nft-blackhole.py
-    /usr/share/nft-blackhole/nft-blackhole.template
-    /usr/local/etc/nft-blackhole.conf
-    /usr/lib/systemd/system/nft-blackhole.service
-    /usr/lib/systemd/system/nft-blackhole-reload.service
-    /usr/lib/systemd/system/nft-blackhole-reload.timer
+    /usr/local/share/nft-blackhole/nft-blackhole.j2
+    /usr/local/etc/nft-blackhole.yaml
+    /usr/local/lib/systemd/system/nft-blackhole.service
+    /usr/local/lib/systemd/system/nft-blackhole-reload.service
+    /usr/local/lib/systemd/system/nft-blackhole-reload.timer
+
+## Configuration
+#### Set the configuration in a file
+`/usr/local/etc/nft-blackhole.yaml`
 
 ## Usage
 ### Manual
