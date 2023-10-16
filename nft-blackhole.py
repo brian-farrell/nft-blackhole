@@ -146,7 +146,7 @@ class Config(object):
         if value:
             self.chain_output = Template(self.OUTPUT_TEMPLATE).substitute(block_policy=self.block_policy)
         else:
-            self.chain_output = None
+            self.chain_output = ''
         self._block_output = value
 
     @property
@@ -218,7 +218,7 @@ class Config(object):
                 self.COUNTRY_EX_PORTS_TEMPLATE
             ).substitute(country_exclude_ports=self.country_exclude_ports)
         else:
-            self.country_exclude_ports_rule = None
+            self.country_exclude_ports_rule = ''
 
     @property
     def country_exclude_ports_rule(self):
