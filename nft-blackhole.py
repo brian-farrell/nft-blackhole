@@ -417,13 +417,13 @@ def country_sets(config, reload=False):
 
 
 def main():
-    config = Config()
     desc = 'Script to blocking IP in nftables by country and black lists'
     parser = argparse.ArgumentParser(description=desc)
     parser.add_argument('action', choices=('start', 'stop', 'restart', 'reload', 'config'),
                         help='Action to nft-blackhole')
     args = parser.parse_args()
     action = args.action
+    config = Config()
 
     if action == 'start':
         start(config)
