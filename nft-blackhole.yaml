@@ -40,10 +40,10 @@ BLACKLIST:
 COUNTRY_LIST:
   - cn
 
-# Country policy: 'block' or 'accept', default: 'block'
-# block - block coutries from list, accept others
-# accept - accept coutries from list, block others
-COUNTRY_POLICY: block
+# Country policy: 'drop' or 'accept', default: 'drop'
+# drop - drop countries from list, accept others
+# accept - accept coutries from list, drop others
+COUNTRY_POLICY: drop
 
 
 # Country exclude ports: port numbers or names, e.g: [993, https]

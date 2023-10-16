@@ -308,6 +308,7 @@ def start(config):
 
     run(['nft', '-f', '-'], input=nft_conf.encode(), check=True)
 
+
 def get_urls(urls, do_filter=False):
     """Download url in threads"""
     logger.info("Getting URLs")
