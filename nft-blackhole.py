@@ -240,7 +240,7 @@ class Config(object):
         self.block_output = _config.get("BLOCK_OUTPUT", False)
         self.whitelist = _config.get("WHITELIST")
         self.blacklist = _config.get("BLACKLIST")
-        self.country_policy = _config.get("COUNTRY_POLICY", 'block')
+        self.country_policy = _config.get("COUNTRY_POLICY", 'drop')
         self.country_list = _config.get("COUNTRY_LIST")
         self.country_exclude_ports = _config.get("COUNTRY_EXCLUDE_PORTS")
 
