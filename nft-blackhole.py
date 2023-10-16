@@ -42,13 +42,15 @@ else:
 journal_handler = JournalHandler(SYSLOG_IDENTIFIER=app_name)
 stderr_handler = logging.StreamHandler(stream=sys.stderr)
 
-log_formatter = logging.Formatter(
+stderr_log_formatter = logging.Formatter(
     '%(asctime)s.%(msecs)03d - %(levelname)s - %(module)s line %(lineno)d: %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )
 
-journal_handler.setFormatter(log_formatter)
-stderr_handler.setFormatter(log_formatter)
+journal_log_formatter = logging.Formatter('%(levelname)s - %(module)s line %(lineno)d: %(message)s')
+
+journal_handler.setFormatter(journal_log_formatter)
+stderr_handler.setFormatter(stderr_log_formatter)
 
 logger.addHandler(journal_handler)
 logger.addHandler(stderr_handler)
