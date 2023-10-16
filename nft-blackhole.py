@@ -258,7 +258,6 @@ class Config(object):
 
     def __str__(self):
         config = f"""
-
         IP_VERSIONS: {self.active_ip_versions}
         BLOCK_POLICY: {self.block_policy}
         BLOCK_OUTPUT: {self.block_output}
@@ -270,7 +269,6 @@ class Config(object):
         COUNTRY_POLICY: {self.country_policy}
         COUNTRY_EXCLUDE_PORTS: {self.country_exclude_ports}
         country_exclude_exports_rule: {self.country_exclude_ports_rule}
-
         """
         return dedent(config)
 
@@ -282,7 +280,6 @@ def stop():
 
 def start(config):
     """Starting nft-blackhole"""
-    logger.info("Starting blackhole")
     nft_template = config.jinja_env.get_template("nft-blackhole.j2")
     nft_conf = nft_template.render(
         default_policy=config.default_policy,
@@ -297,10 +294,10 @@ def start(config):
 
 def get_urls(urls, do_filter=False):
     """Download url in threads"""
-    logger.info("Getting URLs")
     ip_list_aggregated = []
 
     def get_url(url):
+        logger.info(f"Getting URL: {url}")
         try:
             response = urllib.request.urlopen(url, timeout=10)
             content = response.read().decode('utf-8')
@@ -423,19 +420,23 @@ def main():
     config = Config()
 
     if action == 'start':
+        logger.info("Starting blackhole")
         start(config)
         whitelist_sets(config)
         blacklist_sets(config)
         country_sets(config)
     elif action == 'stop':
+        logger.info("Stopping blackhole")
         stop()
     elif action == 'restart':
+        logger.info("Re-starting blackhole")
         stop()
         start(config)
         whitelist_sets(config)
         blacklist_sets(config)
         country_sets(config)
     elif action == 'reload':
+        logger.info("Re-loading blackhole sets")
         whitelist_sets(config, reload=True)
         blacklist_sets(config, reload=True)
         country_sets(config, reload=True)
