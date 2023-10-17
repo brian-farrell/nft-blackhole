@@ -33,7 +33,7 @@ LOGGING
 logger = logging.getLogger(app_name)
 
 # Get logging level from environment variable if set
-DEBUG_MODE = (os.environ.get('NFT_BH_DEBUG_MODE', 'False') == 'True')
+DEBUG_MODE = bool(os.getenv('NFT_BH_DEBUG_MODE', False))
 if DEBUG_MODE:
     logger.setLevel(logging.DEBUG)
 else:
