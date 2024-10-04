@@ -302,7 +302,7 @@ def get_urls(urls, do_filter=False):
             ip_list = []
         else:
             if do_filter:
-                content = re.sub(r'^ *(#.*\n?|\n?)', '', content, flags=re.MULTILINE)
+                content = re.sub(r'\s*(#.*\n?|\n?)', '', content, flags=re.MULTILINE)
             ip_list = content.splitlines()
         return ip_list
 
