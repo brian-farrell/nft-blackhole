@@ -331,8 +331,8 @@ def get_country_ip_list(country_list, ip_version):
     for country in country_list:
         logger.info(f"Getting blocklist for country: {country}")
         url = (
-            f'https://raw.githubusercontent.com/herrbischoff/country-ip-blocks/'
-            f'master/ip{ip_version}/{country.lower()}.cidr'
+            f'https://git.herrbischoff.com/country-ip-blocks-alternative/plain/'
+            f'ip{ip_version}/{country.lower()}.netset'
         )
         urls.append(url)
     ips = get_urls(urls)
