@@ -1,0 +1,83 @@
+# Config file for nft-blackhole in yaml
+
+
+# IP versions supported: 'on' or 'off'. Default: 'off'
+IP_VERSION:
+  v4: on
+  v6: on
+
+
+# Block policy: 'drop' or 'reject'. Default: 'drop'
+BLOCK_POLICY: drop
+
+
+# Block output connections to blacklisted ips: 'on' or 'off'. Default: 'off'
+# Connections to blocked countries will still be possible.
+BLOCK_OUTPUT: off
+
+# Block forwarded connections from blacklisted ips: 'on' or 'off'. Default: 'off'
+BLOCK_FORWARD: off
+
+# Chain priority in nftables: integer or standard priority name. Default: -1
+# Lower values have higher priority and are processed first.
+PRIORITY: -1
+
+# Whitelist: IP or network addresses from static entries, local files or remote list URLs
+# Supports IPv4, IPv6 and mixed formats:
+# static - direct IP addresses or networks
+# file   - paths to local files
+# url    - URLs to remote lists
+WHITELIST:
+  static:
+    - 127.0.0.1/8
+    # - 10.10.10.10/24
+    - 192.168.0.1/16
+    - 2001:db8:5afe::/64
+  file:
+    # - /etc/nft-blackhole/whitelist.local
+  url:
+    # Example remote lists (e.g. Cloudflare IP ranges):
+    # - https://www.cloudflare.com/ips-v4/#
+    # - https://www.cloudflare.com/ips-v6/#
+
+
+# Blacklist: IP or network addresses from static entries, local files or remote blacklist URLs
+# Supports IPv4, IPv6 and mixed formats:
+# static - direct IP addresses or networks
+# file   - paths to local files
+# url    - URLs to remote blacklists
+BLACKLIST:
+  static:
+    # Examples of single IPs or network addresses (RFC 5737 / RFC 3849):
+    - 198.51.100.42
+    - 192.0.2.0/24
+    - 2001:db8:bad:c0de::/64
+  file:
+    # - /etc/nft-blackhole/blacklist.local
+  url:
+    - https://iplists.firehol.org/files/bi_any_0_1d.ipset
+    - https://iplists.firehol.org/files/haley_ssh.ipset
+    - https://iplists.firehol.org/files/firehol_level2.netset
+    - https://si3t.ch/pub/evils/prx-brutes.txt
+
+# Country list source: 'ipverse', 'ebrasha' or 'ipdeny'. Default: 'ipverse'
+# ipverse - uses GitHub @ipverse as source (https://github.com/ipverse/geo-ip-blocks)
+# ebrasha - uses GitHub @ebrasha as source (https://github.com/ebrasha/cidr-ip-ranges-by-country)
+# ipdeny - uses ipdeny.com as source (https://www.ipdeny.com/ipblocks/)
+COUNTRY_LIST_SOURCE: ipverse
+
+# Country list: two letter country codes defined in ISO 3166-1
+# https://en.wikipedia.org/wiki/ISO_3166-1_alpha-2#Officially_assigned_code_elements
+COUNTRY_LIST: [cn, vn]
+
+
+# Country policy: 'block' or 'accept'. Default: 'block'
+# block - block countries from list, accept others
+# accept - accept countries from list, block others
+COUNTRY_POLICY: block
+
+
+# Country exclude ports: port numbers or names, e.g: [993, https]
+# List is available in /etc/services
+# These ports will be accessible on TCP and UDP protocols from all countries (but not from blacklisted IPs)
+COUNTRY_EXCLUDE_PORTS: []

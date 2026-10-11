@@ -1,18 +1,18 @@
+
 # nft-blackhole
-Script / daemon to blocking IP in nftables by country and black lists.
+Daemon blocking IP addresses upon country or blacklist, using nftables
 
 ## Table of contents
-
 - [Overview](#overview)
 - [Installation](#installation)
   - [Manual](#manual)
 - [Configuration](#configuration)
-    - [Set the configuration in a file](#set-the-configuration-in-a-file)
 - [Usage](#usage)
   - [Manual](#manual)
   - [With systemd](#with-systemd)
-  - [List counter packages dropped/accept](#list-counter-packages-droppedaccept)
-  - [List table and sets for blackhole](#list-table-and-sets-for-blackhole)
+  - [Monitoring](#monitoring)
+    - [List packets counters](#list-packets-counters)
+    - [List table and sets for blackhole](#list-table-and-sets-for-blackhole)
   - [Refresh lists](#refresh-lists)
 - [Credits](#credits)
 - [License](#license)
@@ -20,19 +20,23 @@ Script / daemon to blocking IP in nftables by country and black lists.
 ## Overview
 
 ##### Features
-- download publicly available blacklists and block IPs from them,
-- block or whitelist individual countries,
-- whitelist individual networks or IP addresses,
+- download publicly available blacklists and block IPs from them
+- block or whitelist countries
+- whitelist or blacklist from static entries, local files, or remote URLs (IPv4, IPv6, mixed)
+- automatic retry on failed downloads (3 attempts with 5s delay)
+- atomic operations - prevent loading incomplete rulesets on failures
 
 ##### Configuration file
 ###### In the configuration file you can define:
-- IP versions supported (ipv4, ipv6),
-- blocking policy (reject, drop,)
-- network or IP addresses for the white list,
-- blacklist url addresses,
-- block oututput connections to blacklisted IPs,
-- list of countries,
-- policy for countries (accept, block),
+- IP versions supported (IPv4, IPv6)
+- blocking policy (reject, drop)
+- white list (static, file, or url sources)
+- blacklist (static, file, or url sources)
+- block output connections to blacklisted IPs
+- nftables chain priority (e.g. -1, 0, or standard priority names)
+- country IP list source (ipverse, ebrasha, ipdeny)
+- list of countries
+- policy for countries (accept, block)
 - ports excluded from country blocks
 
 ## Installation
@@ -60,42 +64,61 @@ Script / daemon to blocking IP in nftables by country and black lists.
 ## Usage
 ### Manual
 ##### As root:
-	/usr/local/bin/nft-blackhole.py start
-	/usr/local/bin/nft-blackhole.py reload
-	/usr/local/bin/nft-blackhole.py restart
-	/usr/local/bin/nft-blackhole.py stop
+```shell
+/usr/local/sbin/nft-blackhole.py start
+/usr/local/sbin/nft-blackhole.py reload
+/usr/local/sbin/nft-blackhole.py restart
+/usr/local/sbin/nft-blackhole.py stop
+```
 
 ### With systemd
 ##### As root:
-    systemctl enable nft-blackhole.service
-	systemctl start nft-blackhole.service
-	systemctl reload nft-blackhole.service
-	systemctl restart nft-blackhole.service
+```shell
+systemctl enable nft-blackhole.service
+systemctl start nft-blackhole.service
+systemctl reload nft-blackhole.service
+systemctl restart nft-blackhole.service
+```
 
-### List counter packages dropped/accept
-    nft list chain inet blackhole input
-### List table and sets for blackhole
-    nft list table inet blackhole
+### Monitoring
+#### List packets counters
+```shell
+nft list chain inet blackhole input
+```
+
+#### List table and sets for blackhole
+```shell
+nft list table inet blackhole
+```
+
 ### Refresh lists
-#### Manual
+nft-blackhole can download new versions of any blacklist it uses. You can trigger this manually, however it is better to have it automatically and periodically done (either thanks to a cron job or to a Systemd timer).
 
-    /usr/local/bin/nft-blackhole.py reload
-    systemctl reload nft-blackhole.service
+#### Manual
+```shell
+/usr/local/sbin/nft-blackhole.py reload
+systemctl reload nft-blackhole.service
+```
 
 #### Crontab
-    
-    0 */6 * * * systemctl reload nft-blackhole.service
+```
+0 */6 * * * systemctl reload nft-blackhole.service
+```
 
 #### Systemd Timer
-
-    systemctl enable --now nft-blackhole-reload.timer
-    systemctl list-timers --all
+```bash
+systemctl enable --now nft-blackhole-reload.timer
+systemctl list-timers --all
+```
 
 ## Credits
-[country-ip-blocks](https://github.com/herrbischoff/country-ip-blocks) - CIDR country-level IP lists,
+[ipverse/geo-ip-blocks](https://github.com/ipverse/geo-ip-blocks) - Daily-updated IPv4 and IPv6 prefixes by country, derived from network registration data.
 
-[https://iplists.firehol.org/](https://iplists.firehol.org/) - aggregated, publicly available blacklists
+[ebrasha/cidr-ip-ranges-by-country](https://github.com/ebrasha/cidr-ip-ranges-by-country) - Hourly-updated IPv4 and IPv6 CIDR ranges by country, designed for geolocation, firewall rules, and cybersecurity filtering.
+
+[IPdeny](https://www.ipdeny.com/ipblocks/) - A free public service providing downloadable country-specific IP address zone files in CIDR format.
+
+[FireHOL IP Lists](https://iplists.firehol.org/) - A public repository that aggregates, analyzes, and compares security blocklists and cybercrime IP feeds.
 
 ## License
-
 Code released under [MIT](./LICENSE) license.

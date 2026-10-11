@@ -23,6 +23,8 @@ import urllib.request
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from systemd.journal import JournalHandler
 from yaml import safe_load
+import time
+from os.path import exists
 
 app_name = 'nft-blackhole'
 
@@ -310,10 +312,17 @@ def get_urls(urls, do_filter=False):
         do_urls = [executor.submit(get_url, url) for url in urls]
         for out in as_completed(do_urls):
             ip_list = out.result()
+            if ip_list is None:
+                return None
             ip_list_aggregated += ip_list
 
     return ip_list_aggregated
 
+def split_ip_versions(ip_list):
+    '''Split mixed list into deduplicated IPv4 and IPv6 sets'''
+    split_ips = {'v4': set(), 'v6': set()}
+    v4_add = split_ips['v4'].add
+    v6_add = split_ips['v6'].add
 
 def get_blacklist(blacklist):
     """Get blacklists"""
@@ -357,6 +366,9 @@ def whitelist_sets(config, reload=False):
             if config.whitelist[ip_version]:
                 run(['nft', '-f', '-'], input=nft_set.encode(), check=True)
 
+    raw_ips = get_urls(urls)
+    if raw_ips is None:
+        return None
 
 def blacklist_sets(config, reload=False):
     """Create blacklist sets"""
@@ -376,6 +388,18 @@ def blacklist_sets(config, reload=False):
             if ip_list:
                 run(['nft', '-f', '-'], input=nft_set.encode(), check=True)
 
+def apply_nft_sets(ip_data, reload=False):
+    '''Create all nftables sets (whitelist, blacklist, country)'''
+    for set_type in ('whitelist', 'blacklist', 'country'):
+        for ip_ver in IP_VER:
+            set_name = f'{set_type}-{ip_ver}'
+            ip_list = ip_data[set_type][ip_ver]
+            set_list = ', '.join(ip_list)
+            nft_set = (Template(SET_TEMPLATE).substitute(ip_ver=f'ip{ip_ver}', set_name=set_name, ip_list=set_list))
+            if reload:
+                run(['nft', 'flush', 'set', 'inet', 'blackhole', set_name], check=False)
+            if ip_list:
+                run(['nft', '-f', '-'], input=nft_set.encode(), check=True)
 
 def country_sets(config, reload=False):
     """Create country sets"""
@@ -395,6 +419,14 @@ def country_sets(config, reload=False):
             if ip_list:
                 run(['nft', '-f', '-'], input=nft_set.encode(), check=True)
 
+    blacklist_ips = load_ip_sources(BLACKLIST)
+    if blacklist_ips is None:
+        return None
+
+    country_ips = get_country_ips()
+    if country_ips is None:
+        return None
+    return {'whitelist': whitelist_ips, 'blacklist': blacklist_ips, 'country': country_ips}
 
 def main():
     desc = 'Script to blocking IP in nftables by country and black lists'
