@@ -19,11 +19,6 @@ Daemon blocking IP addresses upon country or blacklist, using nftables
 - [License](#license)
 
 ## Overview
-##### Requirements
-- nftables
-- python 3.8+
-- PyYAML
-- systemd (for daemon)
 
 ##### Features
 - download publicly available blacklists and block IPs from them
@@ -92,6 +87,28 @@ Check for existing installation:
 ## Configuration
 #### Set the configuration in a file
 `/etc/nft-blackhole/config.yaml`
+    sudo cp nft-blackhole.conf /usr/local/etc/
+    sudo cp nft-blackhole.py   /usr/local/bin/
+    sudo mkdir /usr/share/nft-blackhole
+    sudo cp nft-blackhole.template /usr/share/nft-blackhole/
+    sudo cp nft-blackhole.service        /lib/systemd/system/
+    sudo cp nft-blackhole-reload.service /lib/systemd/system/
+    sudo cp nft-blackhole-reload.timer   /lib/systemd/system/
+
+### Manual
+##### Requirements
+- nftables
+- python 3.6+
+- python-yaml
+- systemd (for daemon)
+
+##### File location
+    /usr/local/bin/nft-blackhole.py
+    /usr/share/nft-blackhole/nft-blackhole.template
+    /usr/local/etc/nft-blackhole.conf
+    /usr/lib/systemd/system/nft-blackhole.service
+    /usr/lib/systemd/system/nft-blackhole-reload.service
+    /usr/lib/systemd/system/nft-blackhole-reload.timer
 
 ## Usage
 ### Manual
