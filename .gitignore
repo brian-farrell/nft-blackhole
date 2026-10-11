@@ -1,0 +1,64 @@
+# Build
+_build/
+build/
+!docs/build/
+downloads/
+eggs/
+dist/
+*.egg-info
+sdist/
+wheels/
+
+# Caches
+*.cache
+!.cache
+.idea/
+*.pytest_cache
+__pycache__
+.sublime-project
+.sublime-workspace
+tests/__pycache__
+*_version.py
+
+# Databases
+*.sqlite*
+
+# Docker
+*docker-compose.override.yaml
+
+# MacOS
+.DS_Store
+
+# Miscellaneous
+*.graffle
+*.pdf
+*.xlsx
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Private
+env/
+*.env*
+*.envrc*
+*.secret*
+*.pem
+
+# Project-specific
+
+# Test
+cover/
+.coverage
+**coverage.xml
+htmlcov/
+.pytest_cache/
+**/coverage/html/
+
+# Reference/Sandbox
+legal/
+reference/
+research/
+notes.text
+temp.py
