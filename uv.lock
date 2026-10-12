@@ -437,6 +437,15 @@ wheels = [
 ]
 
 [[package]]
+name = "inversion"
+version = "1.0.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/8a/56/4b7237fac01882ba3e984c8ac2e62baf81ffb20d2b2ccf933873b9781f0e/inversion-1.0.0.tar.gz", hash = "sha256:a7c9e912d18d68927453b0d654e2ef6f2b9a523818b033383cec9d93e1042edf", size = 27547, upload-time = "2026-10-12T19:08:45.646Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8b/57/cdb060baae3fcc84347df0f1364beb0b68b4943e2fd736a246dd3eebbdf2/inversion-1.0.0-py3-none-any.whl", hash = "sha256:25c45999ce09aff55effbfa43e83e20b25ef97c99e881925f4eb8d7f7836a179", size = 46241, upload-time = "2026-10-12T19:08:44.404Z" },
+]
+
+[[package]]
 name = "jinja2"
 version = "3.1.6"
 source = { registry = "https://pypi.org/simple" }
@@ -877,7 +886,7 @@ wheels = [
 
 [[package]]
 name = "nft-blackhole"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "cysystemd" },
     { name = "jinja2" },
@@ -1230,11 +1239,14 @@ wheels = [
 
 [[package]]
 name = "verspec"
-version = "0.1.0"
+version = "0.2.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/e7/44/8126f9f0c44319b2efc65feaad589cadef4d77ece200ae3c9133d58464d0/verspec-0.1.0.tar.gz", hash = "sha256:c4504ca697b2056cdb4bfa7121461f5a0e81809255b41c03dda4ba823637c01e", size = 27123, upload-time = "2020-11-30T02:24:09.646Z" }
+dependencies = [
+    { name = "inversion" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/bf/f2/b54333307517b3eb592fe7406a792cffe582cf4444037498c554a18babb8/verspec-0.2.0.tar.gz", hash = "sha256:350c3715601a9cecf78d980c27c87af81124ac74877eba2480dcd7645aaccfe8", size = 2052, upload-time = "2026-10-12T20:45:59.517Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a4/ce/3b6fee91c85626eaf769d617f1be9d2e15c1cca027bbdeb2e0d751469355/verspec-0.1.0-py3-none-any.whl", hash = "sha256:741877d5633cc9464c45a469ae2a31e801e6dbbaa85b9675d481cda100f11c31", size = 19640, upload-time = "2020-11-30T02:24:08.387Z" },
+    { url = "https://files.pythonhosted.org/packages/5b/3b/46291770a715b512f65c7b56ff549e718f354b84f3150ae9faff410f3062/verspec-0.2.0-py3-none-any.whl", hash = "sha256:962fed8f88fc7abaffb75c591c699435ea428910153f0efbc96efba1ed484615", size = 5138, upload-time = "2026-10-12T20:45:58.518Z" },
 ]
 
 [[package]]
