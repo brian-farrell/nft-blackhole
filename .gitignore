@@ -15,8 +15,8 @@ wheels/
 .idea/
 *.pytest_cache
 __pycache__
-.sublime-project
-.sublime-workspace
+*.sublime-project
+*.sublime-workspace
 tests/__pycache__
 *_version.py
 
@@ -47,6 +47,7 @@ env/
 *.pem
 
 # Project-specific
+.venv/
 
 # Test
 cover/
