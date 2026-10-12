@@ -1,12 +1,14 @@
 
 # nft-blackhole
-Daemon blocking IP addresses upon country or blacklist, using nftables
+Daemon blocking IP addresses by country or blacklist, using nftables
 
 ## Table of contents
+
 - [Overview](#overview)
 - [Installation](#installation)
   - [Manual](#manual)
 - [Configuration](#configuration)
+    - [Set the configuration in a file](#set-the-configuration-in-a-file)
 - [Usage](#usage)
   - [Manual](#manual)
   - [With systemd](#with-systemd)
@@ -50,7 +52,7 @@ Daemon blocking IP addresses upon country or blacklist, using nftables
 - systemd (for daemon)
 
 ##### File location
-    /usr/local/bin/nft-blackhole.py
+    /usr/local/sbin/nft-blackhole.py
     /usr/local/share/nft-blackhole/nft-blackhole.j2
     /usr/local/etc/nft-blackhole.yaml
     /usr/local/lib/systemd/system/nft-blackhole.service
@@ -112,7 +114,11 @@ systemctl list-timers --all
 ```
 
 ## Credits
+[country-ip-blocks](https://github.com/herrbischoff/country-ip-blocks) - CIDR country-level IP lists,
+
 [ipverse/geo-ip-blocks](https://github.com/ipverse/geo-ip-blocks) - Daily-updated IPv4 and IPv6 prefixes by country, derived from network registration data.
+
+[https://iplists.firehol.org/](https://iplists.firehol.org/) - aggregated, publicly available blacklists
 
 [ebrasha/cidr-ip-ranges-by-country](https://github.com/ebrasha/cidr-ip-ranges-by-country) - Hourly-updated IPv4 and IPv6 CIDR ranges by country, designed for geolocation, firewall rules, and cybersecurity filtering.
 
