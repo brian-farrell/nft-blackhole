@@ -1,0 +1,40 @@
+
+[project]
+license = "MIT"
+name = "nft-blackhole"
+description = "nft-blackhole is a script / daemon to block IP addresses in nftables by country and black lists."
+dynamic = ["version"]
+authors = [
+    {name = "Tomasz Cebula", email = "tomasz.cebula@gmail.com"},
+    {name = "Brian Farrell", email = "brian.farrell@me.com"}
+]
+readme = {file = "README.md", content-type = "text/markdown"}
+requires-python = ">=3.12"
+
+dependencies = [
+    # Python systemd wrapper using Cython.
+    "cysystemd>=2.0.5",
+    # A very fast and expressive template engine.
+    "jinja2>=3.1.6",
+    # YAML parser and emitter for Python
+    "pyyaml>=6.0.3"
+]
+
+[project.optional-dependencies]
+doc = [
+    # Unleash the power of Mkdocs static website generator, with the use of variables and macros.
+    "mkdocs-macros-plugin",
+    # A powerful documentation framework on top of MkDocs
+    "mkdocs-material[recommended,imaging]",
+    # Automatic documentation from sources for MkDocs
+    "mkdocstrings[python]",
+    # Manage multiple versions of your MkDocs-powered documentation
+    "mike"
+]
+
+[project.urls]
+repository = "https://gitlab.com/brianfarrell/nft-blackhole/"
+documentation = "https://brianfarrell.gitlab.io/nft-blackhole/"
+
+# [tool.basedpyright]
+# ignore = ["nft-blackhole.py"]
