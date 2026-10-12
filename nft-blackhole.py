@@ -5,7 +5,7 @@
 __author__ = "Tomasz Cebula <tomasz.cebula@gmail.com>"
 __credits__ = ["Brian Farrell <brian.farrell@me.com>"]
 __license__ = "MIT"
-__version__ = "1.2.1"
+__version__ = "1.3"
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -21,10 +21,8 @@ from urllib.error import HTTPError
 import urllib.request
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
-from systemd.journal import JournalHandler
+from cysystemd.journal import JournaldLogHandler
 from yaml import safe_load
-import time
-from os.path import exists
 
 app_name = 'nft-blackhole'
 
@@ -43,7 +41,7 @@ else:
 
 LAUNCHED_BY_SYSTEMD = bool(os.getenv('LAUNCHED_BY_SYSTEMD', False))
 if LAUNCHED_BY_SYSTEMD:
-    log_handler = JournalHandler(SYSLOG_IDENTIFIER=app_name)
+    log_handler = JournaldLogHandler(identifier=app_name)
     log_formatter = logging.Formatter('%(levelname)s - %(module)s line %(lineno)d: %(message)s')
 else:
     log_handler = logging.StreamHandler(stream=sys.stderr)
@@ -431,10 +429,10 @@ def country_sets(config, reload=False):
 def main():
     desc = 'Script to blocking IP in nftables by country and black lists'
     parser = argparse.ArgumentParser(description=desc)
-    parser.add_argument('action', choices=('start', 'stop', 'restart', 'reload', 'config'),
+    _ = parser.add_argument('action', choices=('start', 'stop', 'restart', 'reload', 'config'),
                         help='Action to nft-blackhole')
     args = parser.parse_args()
-    action = args.action
+    action = args.action  # pyright: ignore[reportAny]
     config = Config()
 
     if action == 'start':
