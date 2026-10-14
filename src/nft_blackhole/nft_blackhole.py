@@ -122,10 +122,13 @@ class Config(object):
         return self._active_ip_versions
 
     @active_ip_versions.setter
-    def active_ip_versions(self, value: IPVERSIONS):
+    def active_ip_versions(self, value: IPVERSIONS):  # pyright: ignore[reportPropertyTypeMismatch]
         for ip_v in self.IP_VERSIONS:
-            if getattr(value, ip_v):
+            try:
+                getattr(value, ip_v)
                 self._active_ip_versions.append(ip_v)
+            except AttributeError:
+                logger.info(f'No value found for {ip_v} in IP_VERSIONS of config file.')
 
     @property
     def block_policy(self):
@@ -188,9 +191,12 @@ class Config(object):
         # Correct incorrect YAML parsing of no (Norway)
         # It should be the string 'no', but YAML interprets it as False
         # This is a hack due to the lack of YAML 1.2 support by PyYAML
-        while False in value:  # pyright: ignore[reportUnnecessaryContains]
-            value[value.index(False)] = 'no'  # pyright: ignore[reportArgumentType]
-        self._country_list = value
+        # Note that the boolean value False will be conveted to the
+        # string 'False' by the Data dataclass in the config_types module.
+        if value:
+            while 'False' in value:
+                value[value.index('False')] = 'no'
+            self._country_list = value
 
     @property
     def country_policy(self):
