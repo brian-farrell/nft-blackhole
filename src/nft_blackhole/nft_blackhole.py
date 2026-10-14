@@ -16,6 +16,7 @@ from string import Template
 from subprocess import run
 import sys
 from textwrap import dedent
+from typing import override
 from urllib.error import HTTPError
 import urllib.request
 
@@ -26,6 +27,7 @@ from .config_types import Data, BLACKLIST, IPVERSIONS, WHITELIST
 
 app_name = 'nft-blackhole'
 
+DEBUG_FLAG = bool(os.getenv('NFT_BLACKHOLE_DEBUG', 'FALSE'))
 
 """
 LOGGING
@@ -262,6 +264,7 @@ class Config(object):
             logger.info(f"Config loaded from {cls.NFT_BLACKHOLE_CONFIG}")
             return data
 
+    @override
     def __str__(self):
         config = f"""
         IP_VERSIONS: {self.active_ip_versions}
@@ -281,11 +284,16 @@ class Config(object):
 
 def stop():
     """Stopping nft-blackhole"""
-    run(['nft', 'delete', 'table', 'inet', 'blackhole'], check=True)
+    logger.info('Stopping nft-blackhole...')
+    if DEBUG_FLAG:
+        print(f'DEBUG_FLAG is {DEBUG_FLAG}. "Stopping nft-blackhole"')
+    else:
+        _ = run(['nft', 'delete', 'table', 'inet', 'blackhole'], check=True)
 
 
-def start(config):
+def start(config: Config):
     """Starting nft-blackhole"""
+    logger.info('Starting nft-blackhole...')
     nft_template = config.jinja_env.get_template("nft-blackhole.j2")
     nft_conf = nft_template.render(
         default_policy=config.default_policy,
@@ -295,7 +303,10 @@ def start(config):
         chain_output=config.chain_output
     )
 
-    run(['nft', '-f', '-'], input=nft_conf.encode(), check=True)
+    if DEBUG_FLAG:
+        print(f'nft_conf:\n{nft_conf}\n')
+    else:
+        _ = run(['nft', '-f', '-'], input=nft_conf.encode(), check=True)
 
 
 def get_urls(urls, do_filter=False):
@@ -369,10 +380,13 @@ def whitelist_sets(config, reload=False):
                     ip_version=f'ip{ip_version}', set_name=set_name, ip_list=set_list
                 )
             )
-            if reload:
-                run(['nft', 'flush', 'set', 'inet', 'blackhole', set_name], check=True)
-            if config.whitelist[ip_version]:
-                run(['nft', '-f', '-'], input=nft_set.encode(), check=True)
+            if DEBUG_FLAG:
+                print(f'WHITELIST nft_set:\n{nft_set}\n')
+            else:
+                if reload:
+                    _ = run(['nft', 'flush', 'set', 'inet', 'blackhole', set_name], check=True)
+                if config.whitelist[ip_version]:
+                    _ = run(['nft', '-f', '-'], input=nft_set.encode(), check=True)
 
     raw_ips = get_urls(urls)
     if raw_ips is None:
@@ -391,10 +405,13 @@ def blacklist_sets(config, reload=False):
                     ip_version=f'ip{ip_version}', set_name=set_name, ip_list=set_list
                 )
             )
-            if reload:
-                run(['nft', 'flush', 'set', 'inet', 'blackhole', set_name], check=True)
-            if ip_list:
-                run(['nft', '-f', '-'], input=nft_set.encode(), check=True)
+            if DEBUG_FLAG:
+                print(f'BLACKLIST nft_set:\n{nft_set}\n')
+            else:
+                if reload:
+                    _ = run(['nft', 'flush', 'set', 'inet', 'blackhole', set_name], check=True)
+                if ip_list:
+                    _ = run(['nft', '-f', '-'], input=nft_set.encode(), check=True)
 
 def apply_nft_sets(ip_data, reload=False):
     '''Create all nftables sets (whitelist, blacklist, country)'''
@@ -405,9 +422,9 @@ def apply_nft_sets(ip_data, reload=False):
             set_list = ', '.join(ip_list)
             nft_set = (Template(SET_TEMPLATE).substitute(ip_ver=f'ip{ip_ver}', set_name=set_name, ip_list=set_list))
             if reload:
-                run(['nft', 'flush', 'set', 'inet', 'blackhole', set_name], check=False)
+                _ = run(['nft', 'flush', 'set', 'inet', 'blackhole', set_name], check=False)
             if ip_list:
-                run(['nft', '-f', '-'], input=nft_set.encode(), check=True)
+                _ = run(['nft', '-f', '-'], input=nft_set.encode(), check=True)
 
 def country_sets(config, reload=False):
     """Create country sets"""
@@ -422,10 +439,13 @@ def country_sets(config, reload=False):
                     ip_version=f'ip{ip_version}', set_name=set_name, ip_list=set_list
                 )
             )
-            if reload:
-                run(['nft', 'flush', 'set', 'inet', 'blackhole', set_name], check=True)
-            if ip_list:
-                run(['nft', '-f', '-'], input=nft_set.encode(), check=True)
+            if DEBUG_FLAG:
+                print(f'COUNTRY_SETS nft_set:\n{nft_set}\n')
+            else:
+                if reload:
+                    _ = run(['nft', 'flush', 'set', 'inet', 'blackhole', set_name], check=True)
+                if ip_list:
+                    _ = run(['nft', '-f', '-'], input=nft_set.encode(), check=True)
 
     blacklist_ips = load_ip_sources(BLACKLIST)
     if blacklist_ips is None:
@@ -444,6 +464,11 @@ def main():
     args = parser.parse_args()
     action = args.action  # pyright: ignore[reportAny]
     config = Config()
+
+    logger.info(f'NFT_BLACKHOLE_DEBUG: {DEBUG_FLAG}')
+
+    # if DEBUG_FLAG:
+    #     sys.exit(f'DEBUG_FLAG is {DEBUG_FLAG}. Exiting...')
 
     if action == 'start':
         logger.info("Starting blackhole")
