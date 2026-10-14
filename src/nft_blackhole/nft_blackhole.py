@@ -5,7 +5,6 @@
 __author__ = "Tomasz Cebula <tomasz.cebula@gmail.com>"
 __credits__ = ["Brian Farrell <brian.farrell@me.com>"]
 __license__ = "MIT"
-__version__ = "1.3"
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -22,7 +21,8 @@ import urllib.request
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from cysystemd.journal import JournaldLogHandler
-from yaml import safe_load
+
+from .config_types import Data, BLACKLIST, IPVERSIONS, WHITELIST
 
 app_name = 'nft-blackhole'
 
@@ -65,8 +65,10 @@ if IGNORE_CERTIFICATE:
 
 https_handler = urllib.request.HTTPSHandler(context=ctx)
 opener = urllib.request.build_opener(https_handler)
-opener.addheaders = [('User-agent', 'Mozilla/5.0 (compatible; nft-blackhole/0.1.0; '
-                      '+https://github.com/tomasz-c/nft-blackhole)')]
+opener.addheaders = [(
+    'User-agent',
+    'Mozilla/5.0 (compatible; nft-blackhole/0.1.0; +https://github.com/brian-farrell/nft-blackhole)'
+    )]
 urllib.request.install_opener(opener)
 
 
@@ -74,12 +76,12 @@ class Config(object):
     """The Config object holds all configuration values.
     The user is able to customize settings in /usr/local/etc/nft-blackhole.yaml.
     """
-    COUNTRY_EX_PORTS_TEMPLATE = 'meta l4proto { tcp, udp } th dport { ${country_exclude_ports} } counter accept'
-    IP_VERSIONS = ['v4', 'v6']
-    NFT_BLACKHOLE_CONFIG = '/usr/local/etc/nft-blackhole.yaml'
-    NFT_TEMPLATE = '/usr/local/share/nft-blackhole/nft-blackhole.template'
+    COUNTRY_EX_PORTS_TEMPLATE: str = 'meta l4proto { tcp, udp } th dport { ${country_exclude_ports} } counter accept'
+    IP_VERSIONS: list[str] = ['v4', 'v6']
+    NFT_BLACKHOLE_CONFIG: str = '/usr/local/etc/nft-blackhole.yaml'
+    NFT_TEMPLATE: str = '/usr/local/share/nft-blackhole/nft-blackhole.template'
 
-    OUTPUT_TEMPLATE = (
+    OUTPUT_TEMPLATE: str = (
         '\tchain output {\n\t\ttype filter hook output priority -1; policy accept;\n'
         '\t\tip daddr @whitelist-v4 counter accept\n'
         '\t\tip6 daddr @whitelist-v6 counter accept\n'
@@ -87,28 +89,28 @@ class Config(object):
         '\t\tip6 daddr @blacklist-v6 counter ${block_policy}\n\t}'
     ).expandtabs()
 
-    SET_TEMPLATE = (
+    SET_TEMPLATE: str = (
         'table inet blackhole {\n\tset ${set_name} {\n\t\ttype ${ip_version}_addr\n'
         '\t\tflags interval\n\t\tauto-merge\n\t\telements = { ${ip_list} }\n\t}\n}'
     ).expandtabs()
 
     def __init__(self):
-        self._active_ip_versions = list()
-        self._block_policy = None
-        self._block_output = None
-        self._chain_output = None
-        self._default_policy = None
-        self._whitelist = None
-        self._blacklist = None
-        self._country_list = None
-        self._country_policy = None
-        self._country_exclude_ports = None
-        self._country_exclude_ports_rule = None
+        self._active_ip_versions: list[str] = list()
+        self._block_policy: str
+        self._block_output: bool
+        self._chain_output: str
+        self._default_policy: str
+        self._whitelist: WHITELIST
+        self._blacklist: BLACKLIST
+        self._country_list: list[str] | None
+        self._country_policy: str
+        self._country_exclude_ports: str | None
+        self._country_exclude_ports_rule: str
 
-        _config = Config._load_config()
+        _config: Data = Config._load_config()  # pyright: ignore[reportAssignmentType]
         self._configure(_config)
 
-        self.jinja_env = Environment(
+        self.jinja_env: Environment = Environment(
             loader=FileSystemLoader("/usr/local/share/nft-blackhole"),
             autoescape=select_autoescape(),
             trim_blocks=True,
@@ -120,9 +122,9 @@ class Config(object):
         return self._active_ip_versions
 
     @active_ip_versions.setter
-    def active_ip_versions(self, value):
+    def active_ip_versions(self, value: IPVERSIONS):
         for ip_v in self.IP_VERSIONS:
-            if value[ip_v]:
+            if getattr(value, ip_v):
                 self._active_ip_versions.append(ip_v)
 
     @property
@@ -130,7 +132,7 @@ class Config(object):
         return self._block_policy
 
     @block_policy.setter
-    def block_policy(self, value):
+    def block_policy(self, value: str):
         self._block_policy = value
 
     @property
@@ -138,7 +140,7 @@ class Config(object):
         return self._block_output
 
     @block_output.setter
-    def block_output(self, value):
+    def block_output(self, value: bool):
         if value:
             self.chain_output = Template(self.OUTPUT_TEMPLATE).substitute(block_policy=self.block_policy)
         else:
@@ -150,7 +152,7 @@ class Config(object):
         return self._chain_output
 
     @chain_output.setter
-    def chain_output(self, value):
+    def chain_output(self, value: str):
         self._chain_output = value
 
     @property
@@ -158,7 +160,7 @@ class Config(object):
         return self._default_policy
 
     @default_policy.setter
-    def default_policy(self, value):
+    def default_policy(self, value: str):
         self._default_policy = value
 
     @property
@@ -166,7 +168,7 @@ class Config(object):
         return self._whitelist
 
     @whitelist.setter
-    def whitelist(self, value):
+    def whitelist(self, value: WHITELIST):
         self._whitelist = value
 
     @property
@@ -174,7 +176,7 @@ class Config(object):
         return self._blacklist
 
     @blacklist.setter
-    def blacklist(self, value):
+    def blacklist(self, value: BLACKLIST):
         self._blacklist = value
 
     @property
@@ -182,12 +184,12 @@ class Config(object):
         return self._country_list
 
     @country_list.setter
-    def country_list(self, value):
+    def country_list(self, value: list[str] | None):
         # Correct incorrect YAML parsing of no (Norway)
         # It should be the string 'no', but YAML interprets it as False
         # This is a hack due to the lack of YAML 1.2 support by PyYAML
-        while False in value:
-            value[value.index(False)] = 'no'
+        while False in value:  # pyright: ignore[reportUnnecessaryContains]
+            value[value.index(False)] = 'no'  # pyright: ignore[reportArgumentType]
         self._country_list = value
 
     @property
@@ -195,7 +197,7 @@ class Config(object):
         return self._country_policy
 
     @country_policy.setter
-    def country_policy(self, value):
+    def country_policy(self, value: str):
         if value == 'drop':
             self.default_policy = 'accept'
         else:
@@ -207,13 +209,14 @@ class Config(object):
         return self._country_exclude_ports
 
     @country_exclude_ports.setter
-    def country_exclude_ports(self, value):
+    def country_exclude_ports(self, value: list[int | str] | None):  # pyright: ignore[reportPropertyTypeMismatch]
         if value:
             self._country_exclude_ports = ', '.join(map(str, value))
             self.country_exclude_ports_rule = Template(
                 self.COUNTRY_EX_PORTS_TEMPLATE
             ).substitute(country_exclude_ports=self.country_exclude_ports)
         else:
+            self._country_exclude_ports = None
             self.country_exclude_ports_rule = ''
 
     @property
@@ -221,30 +224,31 @@ class Config(object):
         return self._country_exclude_ports_rule
 
     @country_exclude_ports_rule.setter
-    def country_exclude_ports_rule(self, value):
+    def country_exclude_ports_rule(self, value: str):
         self._country_exclude_ports_rule = value
 
-    def _configure(self, _config):
+    def _configure(self, _config: Data) -> None:
         # IP_VERSIONS is a required config value
-        if active_ip_versions := _config.get("IP_VERSIONS"):
+        if active_ip_versions := _config.IP_VERSIONS:
             self.active_ip_versions = active_ip_versions
         else:
             logger.error("The config file does not specify IP_VERSIONS. Exiting.")
             sys.exit(78)
 
-        self.block_policy = _config.get("BLOCK_POLICY", 'drop')
-        self.block_output = _config.get("BLOCK_OUTPUT", False)
-        self.whitelist = _config.get("WHITELIST")
-        self.blacklist = _config.get("BLACKLIST")
-        self.country_policy = _config.get("COUNTRY_POLICY", 'drop')
-        self.country_list = _config.get("COUNTRY_LIST")
-        self.country_exclude_ports = _config.get("COUNTRY_EXCLUDE_PORTS")
+        self.block_policy = _config.BLOCK_POLICY or 'drop'
+        self.block_output = _config.BLOCK_OUTPUT or False
+        self.whitelist = _config.WHITELIST
+        self.blacklist = _config.BLACKLIST
+        self.country_policy = _config.COUNTRY_POLICY or 'drop'
+        self.country_list = _config.COUNTRY_LIST
+        self.country_exclude_ports = _config.COUNTRY_EXCLUDE_PORTS
+
 
     @classmethod
-    def _load_config(cls):
+    def _load_config(cls) -> Data | list[Data]:
         try:
             with open(cls.NFT_BLACKHOLE_CONFIG, 'r') as stream:
-                data = safe_load(stream)
+                data: Data | list[Data] = Data.from_yaml(stream)  # pyright: ignore[reportUnknownMemberType]
         except FileNotFoundError:
             logger.error("No config file found at /usr/local/etc/nft-blackhole.yaml. Exiting.")
             sys.exit(78)

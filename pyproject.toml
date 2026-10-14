@@ -14,6 +14,9 @@ requires-python = ">=3.12"
 dependencies = [
     # Python systemd wrapper using Cython.
     "cysystemd>=2.0.5",
+    # A fast, well-tested serialization library for Python dataclasses with
+    # automatic type conversion and support for JSON, YAML, TOML
+    "dataclass-wizard>=1.0.0",
     # A very fast and expressive template engine.
     "jinja2>=3.1.6",
     # YAML parser and emitter for Python
@@ -36,8 +39,8 @@ doc = [
 repository = "https://gitlab.com/brianfarrell/nft-blackhole/"
 documentation = "https://brianfarrell.gitlab.io/nft-blackhole/"
 
-# [project.scripts]
-# test = "test:main"
+[project.scripts]
+nft-blackhole = "nft_blackhole.nft_blackhole:main"
 
 [build-system]
 requires = ["setuptools", "setuptools-scm[toml]", "wheel"]

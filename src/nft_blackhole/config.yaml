@@ -2,7 +2,7 @@
 
 
 # IP versions supported: 'on' or 'off'. Default: 'off'
-IP_VERSION:
+IP_VERSIONS:
   v4: on
   v6: on
 
