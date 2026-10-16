@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import override
+from urllib import parse
 
 from dataclass_wizard.mixins.yaml import YAMLWizard
 
@@ -54,3 +56,30 @@ class BLACKLIST:
     static: list[str] | None
     file: list[str] | None
     url: list[str] | None
+
+@dataclass(init=False)
+class URL:
+    scheme: str
+    netloc: str
+    path: str
+    query: str
+    fragment: str
+
+    def __init__(self, url_string: str) -> None:
+        addr = parse.urlsplit(url_string)
+        self.scheme = addr.scheme
+        self.netloc = addr.netloc
+        self.path = addr.path
+        self.query = addr.query
+        self.fragment = addr.fragment
+
+    def __post_init__(self):
+        assert all([self.scheme, self.netloc, self.path])
+        assert self.scheme == 'https'
+
+    @override
+    def __str__(self) -> str:
+        if self.scheme:
+            return self.scheme + '://' + self.netloc + self.path + self.query + self.fragment
+        else:
+            return self.netloc + self.path + self.query + self.fragment
