@@ -80,7 +80,7 @@ class Config(object):
     """
     COUNTRY_EX_PORTS_TEMPLATE: str = 'meta l4proto { tcp, udp } th dport { ${country_exclude_ports} } counter accept'
     IP_VERSIONS: list[str] = ['v4', 'v6']
-    NFT_BLACKHOLE_CONFIG: str = '/usr/local/etc/nft-blackhole.yaml'
+    NFT_BLACKHOLE_CONFIG: str = os.getenv('NFT_BLACKHOLE_CONFIG_PATH', '/usr/local/etc/nft-blackhole.yaml')
     NFT_TEMPLATE: str = '/usr/local/share/nft-blackhole/nft-blackhole.template'
 
     OUTPUT_TEMPLATE: str = (
@@ -254,11 +254,12 @@ class Config(object):
 
     @classmethod
     def _load_config(cls) -> Data | list[Data]:
+        print(f'Loading config from {cls.NFT_BLACKHOLE_CONFIG}')
         try:
             with open(cls.NFT_BLACKHOLE_CONFIG, 'r') as stream:
                 data: Data | list[Data] = Data.from_yaml(stream)  # pyright: ignore[reportUnknownMemberType]
         except FileNotFoundError:
-            logger.error("No config file found at /usr/local/etc/nft-blackhole.yaml. Exiting.")
+            logger.error(f"No config file found at {cls.NFT_BLACKHOLE_CONFIG}. Exiting.")
             sys.exit(78)
         else:
             logger.info(f"Config loaded from {cls.NFT_BLACKHOLE_CONFIG}")
