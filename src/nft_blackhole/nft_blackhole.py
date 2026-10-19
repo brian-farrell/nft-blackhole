@@ -5,6 +5,7 @@ whitelist/blacklist IP addresses in nftables
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass
 import os
 import ssl
 from string import Template
@@ -236,7 +237,16 @@ def apply_nft_sets(ip_data, reload=False):
                 _ = run(['nft', '-f', '-'], input=nft_set.encode(), check=True)
 
 
-def parse_cmd() -> argparse.Namespace:
+@dataclass
+class NftbArgs:
+    """
+    We use this dataclass to allow us to type hint command line args
+    """
+    cmd: str
+    ignore_certs: bool
+
+
+def parse_cmd() -> NftbArgs:
     desc: str = 'whitelist/blacklist IP addresses in nftables'
     parser = argparse.ArgumentParser(description=desc)
     
@@ -252,7 +262,7 @@ def parse_cmd() -> argparse.Namespace:
         action='store_true',
     )
 
-    args: argparse.Namespace = parser.parse_args()
+    args: NftbArgs = NftbArgs(**vars(parser.parse_args()))  # pyright: ignore[reportAny]
 
     return args
 
@@ -261,12 +271,12 @@ def main():
     logger.info(f'NFT_BLACKHOLE_DEBUG: {DEBUG_FLAG}')
 
     args = parse_cmd()
-    print(f"\nARGS: {args}\n")
-    action = args.cmd  # pyright: ignore[reportAny]
+    cmd: str = args.cmd
+
     config = Config()
 
-    if args.ignore_certs:  # pyright: ignore[reportAny]
-        config.ignore_certs = args.ignore_certs  # pyright: ignore[reportAny]
+    if args.ignore_certs:
+        config.ignore_certs = args.ignore_certs
 
     # urllib setup
     ctx = ssl.create_default_context()
@@ -283,19 +293,19 @@ def main():
         )]
     urllib.request.install_opener(opener)
 
-    if action == 'start':
+    if cmd == 'start':
         logger.info("Starting blackhole")
         start(config)
-    elif action == 'stop':
+    elif cmd == 'stop':
         logger.info("Stopping blackhole")
         stop()
-    elif action == 'restart':
+    elif cmd == 'restart':
         logger.info("Re-starting blackhole")
         stop()
         start(config)
-    elif action == 'reload':
+    elif cmd == 'reload':
         logger.info("Re-loading blackhole sets")
-    elif action == 'config':
+    elif cmd == 'config':
         print(config)
 
     return 0
