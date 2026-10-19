@@ -6,7 +6,6 @@ whitelist/blacklist IP addresses in nftables
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
-import os
 import ssl
 from string import Template
 from subprocess import run
@@ -14,11 +13,9 @@ import sys
 import time
 import urllib.request
 
+from . import DEBUG_FLAG
 from .config import Config
 from .logger import logger
-
-
-DEBUG_FLAG = bool(os.getenv('NFT_BLACKHOLE_DEBUG', 'FALSE'))
 
 
 def start(config: Config):

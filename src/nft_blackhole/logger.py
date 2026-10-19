@@ -5,12 +5,12 @@ import sys
 
 from cysystemd.journal import JournaldLogHandler
 
+from . import DEBUG_FLAG
 
 app_name = 'nft-blackhole'
 logger = logging.getLogger(app_name)
 
 # Get logging level from environment variable if set
-DEBUG_FLAG = bool(os.getenv('NFT_BLACKHOLE_DEBUG', 'FALSE'))
 if DEBUG_FLAG:
     logger.setLevel(logging.DEBUG)
 else:

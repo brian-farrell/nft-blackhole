@@ -266,7 +266,6 @@ class Config(object):
 
     @classmethod
     def _load_config(cls) -> Data | list[Data]:
-        print(f'Loading config from {cls.nft_blackhole_config}')
         try:
             with open(cls.nft_blackhole_config, 'r') as stream:
                 data: Data | list[Data] = Data.from_yaml(stream)  # pyright: ignore[reportUnknownMemberType]
