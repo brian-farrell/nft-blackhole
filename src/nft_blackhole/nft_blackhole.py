@@ -1,10 +1,7 @@
-#!/usr/bin/env python
 
-"""Script to create blocking IP in nftables by country and black lists"""
-
-__author__ = "Tomasz Cebula <tomasz.cebula@gmail.com>"
-__credits__ = ["Brian Farrell <brian.farrell@me.com>"]
-__license__ = "MIT"
+"""
+whitelist/blacklist IP addresses in nftables
+"""
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -12,32 +9,15 @@ import os
 import ssl
 from string import Template
 from subprocess import run
-from sys import stderr, exit
+import sys
 import time
 import urllib.request
 
 from .config import Config
 from .logger import logger
 
+
 DEBUG_FLAG = bool(os.getenv('NFT_BLACKHOLE_DEBUG', 'FALSE'))
-
-"""
-urllib config
-"""
-IGNORE_CERTIFICATE = False
-ctx = ssl.create_default_context()
-
-if IGNORE_CERTIFICATE:
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
-
-https_handler = urllib.request.HTTPSHandler(context=ctx)
-opener = urllib.request.build_opener(https_handler)
-opener.addheaders = [(
-    'User-agent',
-    'Mozilla/5.0 (compatible; nft-blackhole/0.1.0; +https://github.com/brian-farrell/nft-blackhole)'
-    )]
-urllib.request.install_opener(opener)
 
 
 def start(config: Config):
@@ -79,11 +59,11 @@ def get_urls(urls, max_retries=3, retry_delay=5):
                 content = response.read().decode('utf-8')
             except BaseException as exc:
                 if attempt < max_retries - 1:
-                    print(f'WARNING: Failed to fetch {url} on attempt {attempt+1}/{max_retries}. Retrying in {retry_delay}s. Error: {exc}', file=stderr)
+                    print(f'WARNING: Failed to fetch {url} on attempt {attempt+1}/{max_retries}. Retrying in {retry_delay}s. Error: {exc}', file=sys.stderr)
                     time.sleep(retry_delay)
                     continue
                 else:
-                    print(f'ERROR: Failed to fetch {url} after {max_retries} attempts. Giving up. Final error: {exc}', file=stderr)
+                    print(f'ERROR: Failed to fetch {url} after {max_retries} attempts. Giving up. Final error: {exc}', file=sys.stderr)
                     return None
             else:
                 return content.splitlines()
@@ -99,19 +79,19 @@ def get_urls(urls, max_retries=3, retry_delay=5):
     return ip_list_aggregated
 
 
-def get_country_ips():
+def get_country_ips(config: Config):
     '''Fetch country IP lists based on configured source and return dict per IP version'''
-    if not COUNTRY_LIST:
+    if not config.country_list:
         return {'v4': set(), 'v6': set()}
 
     urls = []
     for ip_ver in IP_VER:
-        for country in COUNTRY_LIST:
+        for country in country_list:
             c_lower = country.lower()
-            if COUNTRY_LIST_SOURCE == 'ebrasha':
+            if country_list_source == 'ebrasha':
                 c_upper = country.upper()
                 url = f'https://raw.githubusercontent.com/ebrasha/cidr-ip-ranges-by-country/refs/heads/master/CIDR/{c_upper}-ip{ip_ver}-Hackers.Zone.txt'
-            elif COUNTRY_LIST_SOURCE == 'ipdeny':
+            elif country_list_source == 'ipdeny':
                 if ip_ver == 'v4':
                     url = f'https://www.ipdeny.com/ipblocks/data/aggregated/{c_lower}-aggregated.zone'
                 else:
@@ -204,7 +184,7 @@ def load_ip_sources(config_entry):
             with open(filepath, 'r') as f:
                 raw_ips.extend(f.readlines())
         except OSError as exc:
-            print(f'ERROR: Failed to read local file {filepath}: {exc}', file=stderr)
+            print(f'ERROR: Failed to read local file {filepath}: {exc}', file=sys.stderr)
             return None
 
     # Fetch URLs
@@ -228,11 +208,11 @@ def load_ip_sources(config_entry):
 
 def fetch_all_lists():
     '''Fetch all whitelist, blacklist and country lists with validation'''
-    whitelist_ips = load_ip_sources(WHITELIST)
+    whitelist_ips = load_ip_sources(whitelist)
     if whitelist_ips is None:
         return None
 
-    blacklist_ips = load_ip_sources(BLACKLIST)
+    blacklist_ips = load_ip_sources(blacklist)
     if blacklist_ips is None:
         return None
 
@@ -256,19 +236,52 @@ def apply_nft_sets(ip_data, reload=False):
                 _ = run(['nft', '-f', '-'], input=nft_set.encode(), check=True)
 
 
-def main():
-    desc = 'Script to blocking IP in nftables by country and black lists'
+def parse_cmd() -> argparse.Namespace:
+    desc: str = 'whitelist/blacklist IP addresses in nftables'
     parser = argparse.ArgumentParser(description=desc)
-    _ = parser.add_argument('action', choices=('start', 'stop', 'restart', 'reload', 'config'),
-                        help='Action to nft-blackhole')
-    args = parser.parse_args()
-    action = args.action  # pyright: ignore[reportAny]
-    config = Config()
+    
+    _ = parser.add_argument(
+        'cmd',
+        choices=('start', 'stop', 'restart', 'reload', 'config'),
+        help='Action to nft-blackhole',
+        action='store',
+    )
 
+    _ = parser.add_argument(
+        '--ignore-certs',
+        action='store_true',
+    )
+
+    args: argparse.Namespace = parser.parse_args()
+
+    return args
+
+
+def main():
     logger.info(f'NFT_BLACKHOLE_DEBUG: {DEBUG_FLAG}')
 
-    # if DEBUG_FLAG:
-    #     sys.exit(f'DEBUG_FLAG is {DEBUG_FLAG}. Exiting...')
+    args = parse_cmd()
+    print(f"\nARGS: {args}\n")
+    action = args.cmd  # pyright: ignore[reportAny]
+    config = Config()
+
+    if args.ignore_certs:  # pyright: ignore[reportAny]
+        config.ignore_certs = args.ignore_certs  # pyright: ignore[reportAny]
+
+    # urllib setup
+    ctx = ssl.create_default_context()
+
+    if config.ignore_certs:
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+
+    https_handler = urllib.request.HTTPSHandler(context=ctx)
+    opener = urllib.request.build_opener(https_handler)
+    opener.addheaders = [(
+        'User-agent',
+        'Mozilla/5.0 (compatible; nft-blackhole/0.1.0; +https://github.com/brian-farrell/nft-blackhole)'
+        )]
+    urllib.request.install_opener(opener)
 
     if action == 'start':
         logger.info("Starting blackhole")
@@ -285,6 +298,8 @@ def main():
     elif action == 'config':
         print(config)
 
+    return 0
+
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())

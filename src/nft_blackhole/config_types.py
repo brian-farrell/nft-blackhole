@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -11,21 +12,21 @@ class Data(YAMLWizard):
     Data dataclass
 
     """
-    IP_VERSIONS: IPVERSIONS
-    BLOCK_POLICY: str
-    BLOCK_OUTPUT: bool
-    BLOCK_FORWARD: bool
-    PRIORITY: int
-    WHITELIST: WHITELIST
-    BLACKLIST: BLACKLIST
-    COUNTRY_LIST_SOURCE: str | None
-    COUNTRY_LIST: list[str] | None
-    COUNTRY_POLICY: str
-    COUNTRY_EXCLUDE_PORTS: list[int | str] | None
+    blacklist: BLACKLIST
+    block_forward: bool
+    block_output: bool
+    block_policy: str
+    country_exclude_ports: list[int | str] | None
+    country_list: list[str] | None
+    country_list_source: str | None
+    country_policy: str
+    ip_version_support: IPVERSION
+    priority: int
+    whitelist: WHITELIST
 
 
 @dataclass
-class IPVERSIONS:
+class IPVERSION:
     """
     IPVERSIONS dataclass
 

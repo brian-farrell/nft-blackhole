@@ -3,24 +3,41 @@ import os
 from string import Template
 import sys
 from textwrap import dedent
-from typing import override
+from typing import ClassVar, override
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from .config_types import Data, BLACKLIST, IPVERSIONS, WHITELIST
+from .config_types import Data, BLACKLIST, IPVERSION, WHITELIST
 from .logger import logger
 
 class Config(object):
     """The Config object holds all configuration values.
     The user is able to customize settings in /usr/local/etc/nft-blackhole.yaml.
     """
-    COUNTRY_EX_PORTS_TEMPLATE: str = 'meta l4proto { tcp, udp } th dport { ${country_exclude_ports} } counter accept'
-    IP_VERSIONS: list[str] = ['v4', 'v6']
-    NFT_BLACKHOLE_CONFIG: str = os.getenv('NFT_BLACKHOLE_CONFIG_PATH', '/usr/local/etc/nft-blackhole.yaml')
-    NFT_TEMPLATE: str = '/usr/local/share/nft-blackhole/nft-blackhole.template'
+    ignore_certs_env: bool = bool(os.getenv('NFT_BLACKHOLE_IGNORE_CERTS', False))  # urllib config
 
-    OUTPUT_TEMPLATE: str = (
-        '\tchain output {\n\t\ttype filter hook output priority ${priority}; policy accept;\n'
+    country_exclude_ports_template: ClassVar[str] = (
+        'meta l4proto { tcp, udp } th dport { ${country_exclude_ports} } counter accept'
+    )
+
+    forward_template: ClassVar[str] = (
+        '\tchain forward {\n\t\ttype filter hook forward priority ${priority}; policy ${default_policy};\n'
+        '\t\tct state established,related accept\n'
+        '\t\tip saddr @whitelist-v4 counter accept\n'
+        '\t\tip6 saddr @whitelist-v6 counter accept\n'
+        '\t\tip saddr @blacklist-v4 counter ${block_policy}\n'
+        '\t\tip6 saddr @blacklist-v6 counter ${block_policy}\n'
+        '\t\t${country_ex_ports_rule}\n'
+        '\t\tip saddr @country-v4 counter ${country_policy}\n'
+        '\t\tip6 saddr @country-v6 counter ${country_policy}\n'
+        '\t\tcounter\n\t}'
+    ).expandtabs()
+
+    ip_version_support: ClassVar[list[str]] = ['v4', 'v6']
+    nft_blackhole_config: ClassVar[str] = os.getenv('NFT_BLACKHOLE_CONFIG_PATH', '/usr/local/etc/nft-blackhole.yaml')
+
+    output_template: ClassVar[str] = (
+        'chain output {\n\t\ttype filter hook output priority ${priority}; policy accept;\n'
         '\t\tip daddr @whitelist-v4 counter accept\n'
         '\t\tip6 daddr @whitelist-v6 counter accept\n'
         '\t\tip daddr @blacklist-v4 counter ${block_policy}\n'
@@ -34,15 +51,16 @@ class Config(object):
         self._block_forward: bool
         self._block_output: bool
         self._block_policy: str
-        self._chain_output: str
         self._chain_forward: str
+        self._chain_output: str
         self._country_exclude_ports: list[str] | None
         self._country_exclude_ports_rule: str
         self._country_list: list[str] | None
         self._country_list_source: str
         self._country_policy: str
         self._default_policy: str
-        self._priority: str
+        self._ignore_certs: bool  # urllib
+        self._priority: int
         self._whitelist: WHITELIST
 
         _config: Data = Config._load_config()  # pyright: ignore[reportAssignmentType]
@@ -60,13 +78,37 @@ class Config(object):
         return self._active_ip_versions
 
     @active_ip_versions.setter
-    def active_ip_versions(self, value: IPVERSIONS):  # pyright: ignore[reportPropertyTypeMismatch]
-        for ip_v in self.IP_VERSIONS:
+    def active_ip_versions(self, value: IPVERSION):  # pyright: ignore[reportPropertyTypeMismatch]
+        for ip_v in self.ip_version_support:
             try:
                 getattr(value, ip_v)
                 self._active_ip_versions.append(ip_v)
             except AttributeError:
-                logger.info(f'No value found for {ip_v} in IP_VERSIONS of config file.')
+                logger.info(f'No value found for {ip_v} in ip_version_support of config file.')
+
+    @property
+    def blacklist(self) -> BLACKLIST:
+        return self._blacklist
+
+    @blacklist.setter
+    def blacklist(self, value: BLACKLIST):
+        self._blacklist = value
+
+    @property
+    def block_forward(self) -> bool:
+        return self._block_forward
+
+    @block_forward.setter
+    def block_forward(self, value: bool):
+        self._block_forward = value
+
+    @property
+    def block_output(self) -> bool:
+        return self._block_output
+
+    @block_output.setter
+    def block_output(self, value: bool):
+        self._block_output = value
 
     @property
     def block_policy(self) -> str:
@@ -77,16 +119,12 @@ class Config(object):
         self._block_policy = value
 
     @property
-    def block_output(self) -> bool:
-        return self._block_output
+    def chain_forward(self) -> str:
+        return self._chain_forward
 
-    @block_output.setter
-    def block_output(self, value: bool):
-        if value:
-            self.chain_output = Template(self.OUTPUT_TEMPLATE).substitute(block_policy=self.block_policy)
-        else:
-            self.chain_output = ''
-        self._block_output = value
+    @chain_forward.setter
+    def chain_forward(self, value: str):
+        self._chain_forward = value
 
     @property
     def chain_output(self) -> str:
@@ -97,36 +135,28 @@ class Config(object):
         self._chain_output = value
 
     @property
-    def chain_forward(self) -> str:
-        return self._chain_forward
+    def country_exclude_ports(self) -> list[str] | None:
+        return self._country_exclude_ports
 
-    @chain_forward.setter
-    def chain_forward(self, value: str):
-        self._chain_forward = value
-
-    @property
-    def default_policy(self) -> str:
-        return self._default_policy
-
-    @default_policy.setter
-    def default_policy(self, value: str):
-        self._default_policy = value
-
-    @property
-    def whitelist(self) -> WHITELIST:
-        return self._whitelist
-
-    @whitelist.setter
-    def whitelist(self, value: WHITELIST):
-        self._whitelist = value
+    @country_exclude_ports.setter
+    def country_exclude_ports(self, value: list[int | str] | None):  # pyright: ignore[reportPropertyTypeMismatch]
+        if value:
+            # Convert any int values in list to str
+            self._country_exclude_ports = ', '.join(map(str, value))  # pyright: ignore[reportAttributeAccessIssue]
+            self.country_exclude_ports_rule = Template(
+                self.country_exclude_ports_template
+            ).substitute(country_exclude_ports=self.country_exclude_ports)
+        else:
+            self._country_exclude_ports = None
+            self.country_exclude_ports_rule = ''
 
     @property
-    def blacklist(self) -> BLACKLIST:
-        return self._blacklist
+    def country_exclude_ports_rule(self) -> str:
+        return self._country_exclude_ports_rule
 
-    @blacklist.setter
-    def blacklist(self, value: BLACKLIST):
-        self._blacklist = value
+    @country_exclude_ports_rule.setter
+    def country_exclude_ports_rule(self, value: str):
+        self._country_exclude_ports_rule = value
 
     @property
     def country_list(self) -> list[str] | None:
@@ -145,11 +175,20 @@ class Config(object):
             self._country_list = value
 
     @property
+    def country_list_source(self):
+        return self._country_list_source
+
+    @country_list_source.setter
+    def country_list_source(self, value: str):
+        self._country_list_source = value
+
+    @property
     def country_policy(self) -> str:
         return self._country_policy
 
     @country_policy.setter
     def country_policy(self, value: str):
+        # TODO: Why does this make sense?
         if value == 'drop':
             self.default_policy = 'accept'
         else:
@@ -157,81 +196,102 @@ class Config(object):
         self._country_policy = value
 
     @property
-    def country_exclude_ports(self) -> list[str] | None:
-        return self._country_exclude_ports
+    def default_policy(self) -> str:
+        return self._default_policy
 
-    @country_exclude_ports.setter
-    def country_exclude_ports(self, value: list[int | str] | None):  # pyright: ignore[reportPropertyTypeMismatch]
-        if value:
-            # Convert any int values in list to str
-            self._country_exclude_ports = ', '.join(map(str, value))  # pyright: ignore[reportAttributeAccessIssue]
-            self.country_exclude_ports_rule = Template(
-                self.COUNTRY_EX_PORTS_TEMPLATE
-            ).substitute(country_exclude_ports=self.country_exclude_ports)
-        else:
-            self._country_exclude_ports = None
-            self.country_exclude_ports_rule = ''
+    @default_policy.setter
+    def default_policy(self, value: str):
+        self._default_policy = value
 
     @property
-    def country_exclude_ports_rule(self) -> str:
-        return self._country_exclude_ports_rule
+    def ignore_certs(self):
+        return self._ignore_certs
 
-    @country_exclude_ports_rule.setter
-    def country_exclude_ports_rule(self, value: str):
-        self._country_exclude_ports_rule = value
+    @ignore_certs.setter
+    def ignore_certs(self, value: bool):
+        self._ignore_certs = value
 
     @property
     def priority(self):
         return self._priority
 
     @priority.setter
-    def priority(self, value: str):
+    def priority(self, value: int):
         self._priority = value
 
+    @property
+    def whitelist(self) -> WHITELIST:
+        return self._whitelist
+
+    @whitelist.setter
+    def whitelist(self, value: WHITELIST):
+        self._whitelist = value
+
     def _configure(self, _config: Data) -> None:
-        # IP_VERSIONS is a required config value
-        if active_ip_versions := _config.IP_VERSIONS:
+        # ip_version_support is a required config value
+        if active_ip_versions := _config.ip_version_support:
             self.active_ip_versions = active_ip_versions
         else:
-            logger.error("The config file does not specify IP_VERSIONS. Exiting.")
+            logger.error("The config file does not specify ip_version_support. Exiting.")
             sys.exit(78)
 
-        self.block_policy = _config.BLOCK_POLICY or 'drop'
-        self.block_output = _config.BLOCK_OUTPUT or False
-        self.whitelist = _config.WHITELIST
-        self.blacklist = _config.BLACKLIST
-        self.country_policy = _config.COUNTRY_POLICY or 'drop'
-        self.country_list = _config.COUNTRY_LIST
-        self.country_exclude_ports = _config.COUNTRY_EXCLUDE_PORTS
+        self.blacklist = _config.blacklist
+        self.block_forward = _config.block_forward
+        self.block_output = _config.block_output or False
+        self.block_policy = _config.block_policy or 'drop'
+        self.country_exclude_ports = _config.country_exclude_ports
+        self.country_list = _config.country_list
+        self.country_policy = _config.country_policy or 'drop'
+        self.ignore_certs = self.ignore_certs_env
+        self.priority = _config.priority
+        self.whitelist = _config.whitelist
 
+        if self.block_output:
+            self.chain_output = Template(self.output_template).substitute(
+                priority=self.priority, block_policy=self.block_policy
+            )
+        else:
+            self.chain_output = ''
+
+        if self.block_forward:
+            self.chain_forward = Template(self.forward_template).substitute(
+                priority=self.priority,
+                default_policy=self.default_policy,
+                block_policy=self.block_policy,
+                country_policy=self.country_policy,
+                country_ex_ports_rule=self.country_exclude_ports_rule
+            )
+        else:
+            self.chain_forward = ''
 
     @classmethod
     def _load_config(cls) -> Data | list[Data]:
-        print(f'Loading config from {cls.NFT_BLACKHOLE_CONFIG}')
+        print(f'Loading config from {cls.nft_blackhole_config}')
         try:
-            with open(cls.NFT_BLACKHOLE_CONFIG, 'r') as stream:
+            with open(cls.nft_blackhole_config, 'r') as stream:
                 data: Data | list[Data] = Data.from_yaml(stream)  # pyright: ignore[reportUnknownMemberType]
         except FileNotFoundError:
-            logger.error(f"No config file found at {cls.NFT_BLACKHOLE_CONFIG}. Exiting.")
+            logger.error(f"No config file found at {cls.nft_blackhole_config}. Exiting.")
             sys.exit(78)
         else:
-            logger.info(f"Config loaded from {cls.NFT_BLACKHOLE_CONFIG}")
+            logger.info(f"Config loaded from {cls.nft_blackhole_config}")
             return data
 
     @override
     def __str__(self):
         config = f"""
-        IP_VERSIONS: {self.active_ip_versions}
-        BLOCK_POLICY: {self.block_policy}
-        BLOCK_OUTPUT: {self.block_output}
-        chain_output: {self.chain_output}
+        blacklist: {self.blacklist}
+        block_forward: {self.block_forward}
+        block_policy: {self.block_policy}
+        block_output: {self.block_output}
+        country_list: {self.country_list}
+        country_policy: {self.country_policy}
+        country_exclude_ports: {self.country_exclude_ports}
         default_policy: {self.default_policy}
-        WHITELIST: {self.whitelist}
-        BLACKLIST: {self.blacklist}
-        COUNTRY_LIST: {self.country_list}
-        COUNTRY_POLICY: {self.country_policy}
-        COUNTRY_EXCLUDE_PORTS: {self.country_exclude_ports}
-        country_exclude_exports_rule: {self.country_exclude_ports_rule}
+        ignore_certs: {self.ignore_certs}
+        ip_version_support: {self.active_ip_versions}
+        priority: {self.priority}
+        whitelist: {self.whitelist}
         """
         return dedent(config)
 

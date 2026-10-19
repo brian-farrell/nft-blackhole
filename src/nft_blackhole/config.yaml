@@ -1,33 +1,33 @@
-# Config file for nft-blackhole in yaml
 
+# Config file for nft-blackhole
 
 # IP versions supported: 'on' or 'off'. Default: 'off'
-IP_VERSIONS:
+ip_version_support:
   v4: on
   v6: on
 
 
 # Block policy: 'drop' or 'reject'. Default: 'drop'
-BLOCK_POLICY: drop
+block_policy: drop
 
 
 # Block output connections to blacklisted ips: 'on' or 'off'. Default: 'off'
 # Connections to blocked countries will still be possible.
-BLOCK_OUTPUT: off
+block_output: off
 
 # Block forwarded connections from blacklisted ips: 'on' or 'off'. Default: 'off'
-BLOCK_FORWARD: off
+block_forward: off
 
 # Chain priority in nftables: integer or standard priority name. Default: -1
 # Lower values have higher priority and are processed first.
-PRIORITY: -1
+priority: -1
 
 # Whitelist: IP or network addresses from static entries, local files or remote list URLs
 # Supports IPv4, IPv6 and mixed formats:
 # static - direct IP addresses or networks
 # file   - paths to local files
 # url    - URLs to remote lists
-WHITELIST:
+whitelist:
   static:
     - 127.0.0.1/8
     # - 10.10.10.10/24
@@ -46,7 +46,7 @@ WHITELIST:
 # static - direct IP addresses or networks
 # file   - paths to local files
 # url    - URLs to remote blacklists
-BLACKLIST:
+blacklist:
   static:
     # Examples of single IPs or network addresses (RFC 5737 / RFC 3849):
     - 198.51.100.42
@@ -64,20 +64,20 @@ BLACKLIST:
 # ipverse - uses GitHub @ipverse as source (https://github.com/ipverse/geo-ip-blocks)
 # ebrasha - uses GitHub @ebrasha as source (https://github.com/ebrasha/cidr-ip-ranges-by-country)
 # ipdeny - uses ipdeny.com as source (https://www.ipdeny.com/ipblocks/)
-COUNTRY_LIST_SOURCE: ipverse
+country_list_source: ipverse
 
 # Country list: two letter country codes defined in ISO 3166-1
 # https://en.wikipedia.org/wiki/ISO_3166-1_alpha-2#Officially_assigned_code_elements
-COUNTRY_LIST: [cn, vn]
+country_list: [cn, vn]
 
 
 # Country policy: 'block' or 'accept'. Default: 'block'
 # block - block countries from list, accept others
 # accept - accept countries from list, block others
-COUNTRY_POLICY: block
+country_policy: block
 
 
 # Country exclude ports: port numbers or names, e.g: [993, https]
 # List is available in /etc/services
 # These ports will be accessible on TCP and UDP protocols from all countries (but not from blacklisted IPs)
-COUNTRY_EXCLUDE_PORTS: []
+country_exclude_ports: []
