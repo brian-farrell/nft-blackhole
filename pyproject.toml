@@ -24,6 +24,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+dev = [
+    # A fork of pyright with various type checking improvements, pylance features and more.
+    "basedpyright"
+]
+
 doc = [
     # Unleash the power of Mkdocs static website generator, with the use of variables and macros.
     "mkdocs-macros-plugin",
@@ -49,5 +54,5 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools_scm]
 version_scheme = "python-simplified-semver"
 
-# [tool.basedpyright]
-# ignore = ["nft-blackhole.py"]
+[tool.basedpyright]
+reportImplicitStringConcatenation = false
