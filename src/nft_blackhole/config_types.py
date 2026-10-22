@@ -1,6 +1,4 @@
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 
 from dataclass_wizard.mixins.yaml import YAMLWizard
@@ -23,7 +21,8 @@ class Data(YAMLWizard):
     ip_version_support: IPVERSION
     priority: int
     whitelist: WHITELIST
-
+    ignore_certs: bool = False
+        
 
 @dataclass
 class IPVERSION:
@@ -31,8 +30,8 @@ class IPVERSION:
     IPVERSIONS dataclass
 
     """
-    v4: bool
-    v6: bool
+    v4: bool = False
+    v6: bool = False
 
 
 @dataclass

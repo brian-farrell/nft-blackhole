@@ -7,14 +7,21 @@ from typing import ClassVar, override
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+from . import NotProvided, NOT_PROVIDED
 from .config_types import Data, BLACKLIST, IPVERSION, WHITELIST
+from .exceptions import NftbConfigError
 from .logger import logger
 
 class Config(object):
     """The Config object holds all configuration values.
     The user is able to customize settings in /usr/local/etc/nft-blackhole.yaml.
     """
-    ignore_certs_env: bool = bool(os.getenv('NFT_BLACKHOLE_IGNORE_CERTS', False))  # urllib config
+    bool_map: ClassVar[dict[str, bool]] = {
+    'true': True, 't': True, 'yes': True, 'y': True, '1': True,
+    'false': False, 'f': False, 'no': False, 'n': False, '0': False
+    }
+
+    ignore_certs_env = os.getenv('NFT_BLACKHOLE_IGNORE_CERTS', None)  # pyright: ignore[reportUnannotatedClassAttribute]
 
     country_exclude_ports_template: ClassVar[str] = (
         'meta l4proto { tcp, udp } th dport { ${country_exclude_ports} } counter accept'
@@ -44,6 +51,26 @@ class Config(object):
         '\t\tip6 daddr @blacklist-v6 counter ${block_policy}\n\t}'
     ).expandtabs()
 
+    nft_set_template: ClassVar[str] = (
+        'table inet blackhole {\n\tset ${set_name} {\n\t\ttype ${ip_ver}_addr\n'
+        '\t\tflags interval\n\t\tauto-merge\n\t\telements = { ${ip_list} }\n\t}\n}'
+    ).expandtabs()
+
+    url_templates: ClassVar[dict[str, str | dict[str, str]]] = {
+        'ebrasha': (
+            'https://raw.githubusercontent.com/ebrasha/cidr-ip-ranges-by-country/refs/heads/master/'
+            'CIDR/${country_code}-ip${ip_ver}-Hackers.Zone.txt'
+        ),
+        'ipdeny': {
+            'v4': 'https://www.ipdeny.com/ipblocks/data/aggregated/${country_code}-aggregated.zone',
+            'v6': 'https://www.ipdeny.com/ipv6/ipaddresses/aggregated/${country_code}-aggregated.zone'
+        },
+        'ipverse': (
+            'https://raw.githubusercontent.com/ipverse/geo-ip-blocks/refs/heads/master/'
+            'country/${country_code}/${country_code}-ip${ip_ver}.txt'
+        )
+    }
+
 
     def __init__(self):
         self._active_ip_versions: list[str] = list()
@@ -53,9 +80,9 @@ class Config(object):
         self._block_policy: str
         self._chain_forward: str
         self._chain_output: str
-        self._country_exclude_ports: list[str] | None
+        self._country_exclude_ports: list[str] | NotProvided
         self._country_exclude_ports_rule: str
-        self._country_list: list[str] | None
+        self._country_list: list[str] | NotProvided
         self._country_list_source: str
         self._country_policy: str
         self._default_policy: str
@@ -81,8 +108,9 @@ class Config(object):
     def active_ip_versions(self, value: IPVERSION):  # pyright: ignore[reportPropertyTypeMismatch]
         for ip_v in self.ip_version_support:
             try:
-                getattr(value, ip_v)
-                self._active_ip_versions.append(ip_v)
+                v: bool = getattr(value, ip_v)  # pyright: ignore[reportAny]
+                if v:
+                    self._active_ip_versions.append(ip_v)
             except AttributeError:
                 logger.info(f'No value found for {ip_v} in ip_version_support of config file.')
 
@@ -135,11 +163,13 @@ class Config(object):
         self._chain_output = value
 
     @property
-    def country_exclude_ports(self) -> list[str] | None:
+    def country_exclude_ports(self) -> list[str] | NotProvided:
         return self._country_exclude_ports
 
     @country_exclude_ports.setter
     def country_exclude_ports(self, value: list[int | str] | None):  # pyright: ignore[reportPropertyTypeMismatch]
+        if value == []:
+            value = None
         if value:
             # Convert any int values in list to str
             self._country_exclude_ports = ', '.join(map(str, value))  # pyright: ignore[reportAttributeAccessIssue]
@@ -147,7 +177,7 @@ class Config(object):
                 self.country_exclude_ports_template
             ).substitute(country_exclude_ports=self.country_exclude_ports)
         else:
-            self._country_exclude_ports = None
+            self._country_exclude_ports = NOT_PROVIDED
             self.country_exclude_ports_rule = ''
 
     @property
@@ -159,27 +189,27 @@ class Config(object):
         self._country_exclude_ports_rule = value
 
     @property
-    def country_list(self) -> list[str] | None:
+    def country_list(self) -> list[str] | NotProvided:
         return self._country_list
 
     @country_list.setter
-    def country_list(self, value: list[str] | None):
+    def country_list(self, value: list[str] | NotProvided):
         # Correct incorrect YAML parsing of no (Norway)
         # It should be the string 'no', but YAML interprets it as False
         # This is a hack due to the lack of YAML 1.2 support by PyYAML
         # Note that the boolean value False will be conveted to the
         # string 'False' by the Data dataclass in the config_types module.
-        if value:
+        if value is not NotProvided:
             while 'False' in value:
                 value[value.index('False')] = 'no'
-            self._country_list = value
+        self._country_list = value
 
     @property
-    def country_list_source(self):
+    def country_list_source(self) -> str | NotProvided:
         return self._country_list_source
 
     @country_list_source.setter
-    def country_list_source(self, value: str):
+    def country_list_source(self, value: str | NotProvided):
         self._country_list_source = value
 
     @property
@@ -227,22 +257,31 @@ class Config(object):
     def whitelist(self, value: WHITELIST):
         self._whitelist = value
 
+    def _get_bool(self, value: str) -> bool:
+        bool_value = self.bool_map.get(value.strip().lower(), False)
+
+        return bool_value
+
     def _configure(self, _config: Data) -> None:
         # ip_version_support is a required config value
-        if active_ip_versions := _config.ip_version_support:
-            self.active_ip_versions = active_ip_versions
+        if not _config.ip_version_support.v4 and not _config.ip_version_support.v6:
+            raise NftbConfigError('No ip_version_support is turned on in config file. Exiting...')
         else:
-            logger.error("The config file does not specify ip_version_support. Exiting.")
-            sys.exit(78)
+            self.active_ip_versions = _config.ip_version_support
 
         self.blacklist = _config.blacklist
         self.block_forward = _config.block_forward
-        self.block_output = _config.block_output or False
-        self.block_policy = _config.block_policy or 'drop'
+        self.block_output = _config.block_output
+        self.block_policy = _config.block_policy or 'block'
         self.country_exclude_ports = _config.country_exclude_ports
-        self.country_list = _config.country_list
-        self.country_policy = _config.country_policy or 'drop'
-        self.ignore_certs = self.ignore_certs_env
+        self.country_list = _config.country_list or NOT_PROVIDED
+        self.country_list_source = _config.country_list_source or NOT_PROVIDED
+        self.country_policy = _config.country_policy or 'block'
+
+        if self.ignore_certs_env is not None:
+            self.ignore_certs = self._get_bool(self.ignore_certs_env)
+        else:
+            self.ignore_certs = _config.ignore_certs
         self.priority = _config.priority
         self.whitelist = _config.whitelist
 
@@ -284,6 +323,7 @@ class Config(object):
         block_policy: {self.block_policy}
         block_output: {self.block_output}
         country_list: {self.country_list}
+        country_list_source: {self.country_list_source}
         country_policy: {self.country_policy}
         country_exclude_ports: {self.country_exclude_ports}
         default_policy: {self.default_policy}

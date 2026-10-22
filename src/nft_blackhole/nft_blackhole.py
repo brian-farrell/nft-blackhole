@@ -6,21 +6,29 @@ whitelist/blacklist IP addresses in nftables
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from http.client import HTTPResponse
+from importlib.metadata import version, PackageNotFoundError
 import ssl
 from string import Template
 from subprocess import run
 import sys
 import time
+from urllib.error import HTTPError
 import urllib.request
 
-from . import DEBUG_FLAG
+from . import DEBUG_FLAG, NOT_PROVIDED, NotProvided
 from .config import Config
+from .config_types import WHITELIST, BLACKLIST
+from .exceptions import ExitCode, NftbDataError, NftbError, NftbConfigError
 from .logger import logger
 
 
 def start(config: Config):
     """Starting nft-blackhole"""
     logger.info('Starting nft-blackhole...')
+    ip_data: dict[str, dict[str, set[str]] | NotProvided] = fetch_all_lists(config)
+    apply_nft_sets(config, ip_data)
+
     nft_template = config.jinja_env.get_template("nft-blackhole.j2")
     nft_conf = nft_template.render(
         priority=config.priority,
@@ -47,90 +55,27 @@ def stop():
         _ = run(['nft', 'delete', 'table', 'inet', 'blackhole'], check=True)
 
 
-def get_urls(urls, max_retries=3, retry_delay=5):
-    '''Download url in threads with retry logic'''
-    ip_list_aggregated = []
-    def get_url(url):
-        for attempt in range(max_retries):
-            try:
-                response = urllib.request.urlopen(url, timeout=10)
-                content = response.read().decode('utf-8')
-            except BaseException as exc:
-                if attempt < max_retries - 1:
-                    print(f'WARNING: Failed to fetch {url} on attempt {attempt+1}/{max_retries}. Retrying in {retry_delay}s. Error: {exc}', file=sys.stderr)
-                    time.sleep(retry_delay)
-                    continue
-                else:
-                    print(f'ERROR: Failed to fetch {url} after {max_retries} attempts. Giving up. Final error: {exc}', file=sys.stderr)
-                    return None
-            else:
-                return content.splitlines()
-        return None
-
-    with ThreadPoolExecutor(max_workers=8) as executor:
-        do_urls = [executor.submit(get_url, url) for url in urls]
-        for out in as_completed(do_urls):
-            ip_list = out.result()
-            if ip_list is None:
-                return list()
-            ip_list_aggregated += ip_list
-    return ip_list_aggregated
+def restart():
+    logger.info("Re-starting nft-blackhole")
 
 
-def get_country_ips(config: Config):
-    '''Fetch country IP lists based on configured source and return dict per IP version'''
-    if not config.country_list:
-        return {'v4': set(), 'v6': set()}
-
-    urls = []
-    for ip_ver in IP_VER:
-        for country in country_list:
-            c_lower = country.lower()
-            if country_list_source == 'ebrasha':
-                c_upper = country.upper()
-                url = f'https://raw.githubusercontent.com/ebrasha/cidr-ip-ranges-by-country/refs/heads/master/CIDR/{c_upper}-ip{ip_ver}-Hackers.Zone.txt'
-            elif country_list_source == 'ipdeny':
-                if ip_ver == 'v4':
-                    url = f'https://www.ipdeny.com/ipblocks/data/aggregated/{c_lower}-aggregated.zone'
-                else:
-                    url = f'https://www.ipdeny.com/ipv6/ipaddresses/aggregated/{c_lower}-aggregated.zone'
-            else:  # ipverse
-                url = f'https://raw.githubusercontent.com/ipverse/geo-ip-blocks/refs/heads/master/country/{c_lower}/{c_lower}-ip{ip_ver}.txt'
-            urls.append(url)
-
-    raw_ips = get_urls(urls)
-    if raw_ips is None:
-        return None
-
-    return split_ip_versions(raw_ips)
+def reload():
+    logger.info("Re-loading nft-blackhole sets")
 
 
-def split_ip_versions(ip_list) -> dict[str, set[str]]:
-    '''Split mixed list into deduplicated IPv4 and IPv6 sets'''
-    split_ips: dict[str, set[str]] = {'v4': set(), 'v6': set()}
-    v4_add = split_ips['v4'].add
-    v6_add = split_ips['v6'].add
+def fetch_all_lists(config: Config) -> dict[str, dict[str, set[str]] | NotProvided]:
+    '''Fetch all whitelist, blacklist and country lists with validation'''
+    whitelist_ips: dict[str, set[str]] | NotProvided = load_ip_sources(config.whitelist)
+    blacklist_ips: dict[str, set[str]] | NotProvided = load_ip_sources(config.blacklist)
+    country_ips: dict[str, set[str]] | NotProvided = get_country_ips(config)
 
-    for line in ip_list:
-        if '#' in line:
-            line = line.partition('#')[0]
-        parts = line.split()
-        if not parts:
-            continue
-        entry = parts[0]
-        if ':' in entry:
-            v6_add(entry)
-        elif '.' in entry:
-            v4_add(entry)
+    ip_sets = {'whitelist': whitelist_ips, 'blacklist': blacklist_ips, 'country': country_ips}
 
-    return split_ips
+    return ip_sets
 
 
-def load_ip_sources(config_entry):
+def load_ip_sources(config_entry: WHITELIST | BLACKLIST) -> dict[str, set[str]]:
     '''Load IP sources: extract direct IPs, read local files, and fetch URLs, splitting into v4 and v6'''
-    if not config_entry:
-        return {'v4': set(), 'v6': set()}
-
     raw_ips = []
     file_paths = []
     urls = []
@@ -204,30 +149,103 @@ def load_ip_sources(config_entry):
     return split_ip_versions(raw_ips)
 
 
-def fetch_all_lists():
-    '''Fetch all whitelist, blacklist and country lists with validation'''
-    whitelist_ips = load_ip_sources(whitelist)
-    if whitelist_ips is None:
+def get_country_ips(config: Config) -> dict[str, set[str]] | NotProvided:
+    '''Fetch country IP lists based on configured source and return dict per IP version'''
+    if not config.country_list:
+        return {'v4': set(), 'v6': set()}
+
+    urls: list[str] = []
+    url_string: str
+    url_templates: dict[str, str | dict[str, str]] = config.url_templates
+    print(f'COUNTRY LIST TEMPLATES:\n{url_templates}')
+    for ip_ver in config.ip_version_support:
+        for country in config.country_list:
+            if config.country_list_source == 'ebrasha':
+                country_code = country.upper()
+                url_string = url_templates[config.country_list_source]  # pyright: ignore[reportAssignmentType]
+            elif config.country_list_source == 'ipdeny':
+                country_code = country.lower()
+                url_string = url_templates[config.country_list_source][ip_ver]  # pyright: ignore[reportArgumentType]
+            elif config.country_list_source == 'ipverse':
+                country_code = country.lower()
+                url_string = url_templates[config.country_list_source]  # pyright: ignore[reportAssignmentType]
+            else:
+                raise
+            url: str = Template(url_string).substitute(country_code=country_code, ip_ver=ip_ver)
+            urls.append(url)
+
+    raw_ips = get_urls(urls)
+
+    if not raw_ips:
         return None
 
-    blacklist_ips = load_ip_sources(blacklist)
-    if blacklist_ips is None:
-        return None
-
-    country_ips = get_country_ips()
-    if country_ips is None:
-        return None
-    return {'whitelist': whitelist_ips, 'blacklist': blacklist_ips, 'country': country_ips}
+    return split_ip_versions(raw_ips)
 
 
-def apply_nft_sets(ip_data, reload=False):
+def get_urls(urls: list[str], max_retries: int=3, retry_delay: int=5, timeout: int=10) -> list[str]:
+    '''Download url in threads with retry logic'''
+    ip_list_aggregated: list[str] = []
+
+    def get_url(url: str):
+        for attempt in range(max_retries):
+            try:
+                response: HTTPResponse = urllib.request.urlopen(url, timeout=timeout)  # pyright: ignore[reportAny]
+            except HTTPError as exc:
+                if exc.code == 408 and attempt < max_retries - 1:
+                    logger.warning(
+                        f'Failed to fetch {url} on attempt {attempt+1}/{max_retries}. '
+                        f'Retrying in {retry_delay}s. Error: {exc}'
+                    )
+                    time.sleep(retry_delay)
+                    continue
+                else:
+                    return None
+            else:
+                content: str = response.read().decode('utf-8')
+                return content.splitlines()
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        do_urls = [executor.submit(get_url, url) for url in urls]
+        for out in as_completed(do_urls):
+            ip_list = out.result()
+            if ip_list is None:
+                return list()
+            ip_list_aggregated += ip_list
+    return ip_list_aggregated
+
+
+def split_ip_versions(ip_list) -> dict[str, set[str]]:
+    '''Split mixed list into deduplicated IPv4 and IPv6 sets'''
+    split_ips: dict[str, set[str]] = {'v4': set(), 'v6': set()}
+    v4_add = split_ips['v4'].add
+    v6_add = split_ips['v6'].add
+
+    for line in ip_list:
+        if '#' in line:
+            line = line.partition('#')[0]
+        parts = line.split()
+        if not parts:
+            continue
+        entry = parts[0]
+        if ':' in entry:
+            v6_add(entry)
+        elif '.' in entry:
+            v4_add(entry)
+
+    return split_ips
+
+
+def apply_nft_sets(config: Config, ip_data: dict[str, dict[str, set[str]] | NotProvided], reload: bool=False):
     '''Create all nftables sets (whitelist, blacklist, country)'''
+    print(f"!!!!! ip_data:\n\n{ip_data}\n\n")
     for set_type in ('whitelist', 'blacklist', 'country'):
-        for ip_ver in IP_VER:
+        for ip_ver in config.ip_version_support:
             set_name = f'{set_type}-{ip_ver}'
             ip_list = ip_data[set_type][ip_ver]
             set_list = ', '.join(ip_list)
-            nft_set = (Template(SET_TEMPLATE).substitute(ip_ver=f'ip{ip_ver}', set_name=set_name, ip_list=set_list))
+            nft_set = (
+                Template(config.nft_set_template).substitute(ip_ver=f'ip{ip_ver}', set_name=set_name, ip_list=set_list)
+            )
             if reload:
                 _ = run(['nft', 'flush', 'set', 'inet', 'blackhole', set_name], check=False)
             if ip_list:
@@ -267,10 +285,20 @@ def parse_cmd() -> NftbArgs:
 def main():
     logger.info(f'NFT_BLACKHOLE_DEBUG: {DEBUG_FLAG}')
 
+    try:
+        __version__ = version("package-name")
+    except PackageNotFoundError:
+        # package is not installed
+        __version__ = '2.0.0'
+
     args = parse_cmd()
     cmd: str = args.cmd
 
-    config = Config()
+    try:
+        config = Config()
+    except NftbError as e:
+        logger.error(e)
+        sys.exit(e.exit_code)
 
     if args.ignore_certs:
         config.ignore_certs = args.ignore_certs
@@ -286,27 +314,26 @@ def main():
     opener = urllib.request.build_opener(https_handler)
     opener.addheaders = [(
         'User-agent',
-        'Mozilla/5.0 (compatible; nft-blackhole/0.1.0; +https://github.com/brian-farrell/nft-blackhole)'
+        f'Mozilla/5.0 (compatible; nft-blackhole/{__version__}; +https://github.com/brian-farrell/nft-blackhole)'
         )]
     urllib.request.install_opener(opener)
 
     if cmd == 'start':
-        logger.info("Starting blackhole")
         start(config)
     elif cmd == 'stop':
-        logger.info("Stopping blackhole")
         stop()
     elif cmd == 'restart':
-        logger.info("Re-starting blackhole")
         stop()
         start(config)
     elif cmd == 'reload':
-        logger.info("Re-loading blackhole sets")
+        reload()
     elif cmd == 'config':
         print(config)
 
-    return 0
-
 
 if __name__ == '__main__':
-    sys.exit(main())
+    try:
+        main()
+    except NtfbError as e:
+        logger.error(e)
+        sys.exit(ExitCode.EX_CONFIG)

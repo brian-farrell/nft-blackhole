@@ -1,25 +1,34 @@
 
 # Config file for nft-blackhole
 
-# IP versions supported: 'on' or 'off'. Default: 'off'
+# NOTE: Each key in this file MUST remain in the file. Some values may be toggled
+# 'on' and 'off'. If other keys are not applicable to your situation, simply
+# leave them blank or commented-out.
+
+# IP versions supported: 'on' or 'off'. If BOTH versions are set to 'off', app will terminate
+# without making any changes.
+## Default: 'off'
 ip_version_support:
   v4: on
   v6: on
 
-
-# Block policy: 'drop' or 'reject'. Default: 'drop'
+# Block policy: 'drop' or 'reject'.
+## Default: 'drop'
 block_policy: drop
 
 
-# Block output connections to blacklisted ips: 'on' or 'off'. Default: 'off'
+# Block output connections to blacklisted ips: 'on' or 'off'.
 # Connections to blocked countries will still be possible.
+## Default: 'off'
 block_output: off
 
-# Block forwarded connections from blacklisted ips: 'on' or 'off'. Default: 'off'
+# Block forwarded connections from blacklisted ips: 'on' or 'off'.
+## Default: 'off'
 block_forward: off
 
-# Chain priority in nftables: integer or standard priority name. Default: -1
+# Chain priority in nftables: integer or standard priority name.
 # Lower values have higher priority and are processed first.
+## Default: -1
 priority: -1
 
 # Whitelist: IP or network addresses from static entries, local files or remote list URLs
@@ -29,10 +38,10 @@ priority: -1
 # url    - URLs to remote lists
 whitelist:
   static:
-    - 127.0.0.1/8
-    # - 10.10.10.10/24
-    - 192.168.0.1/16
-    - 2001:db8:5afe::/64
+    #- 127.0.0.1/8
+    ## - 10.10.10.10/24
+    #- 192.168.0.1/16
+    #- 2001:db8:5afe::/64
   file:
     # - /etc/nft-blackhole/whitelist.local
   url:
@@ -49,35 +58,44 @@ whitelist:
 blacklist:
   static:
     # Examples of single IPs or network addresses (RFC 5737 / RFC 3849):
-    - 198.51.100.42
-    - 192.0.2.0/24
-    - 2001:db8:bad:c0de::/64
+    #- 198.51.100.42
+    #- 192.0.2.0/24
+    #- 2001:db8:bad:c0de::/64
   file:
     # - /etc/nft-blackhole/blacklist.local
   url:
-    - https://iplists.firehol.org/files/bi_any_0_1d.ipset
-    - https://iplists.firehol.org/files/haley_ssh.ipset
-    - https://iplists.firehol.org/files/firehol_level2.netset
-    - https://si3t.ch/pub/evils/prx-brutes.txt
+    #- https://iplists.firehol.org/files/bi_any_0_1d.ipset
+    #- https://iplists.firehol.org/files/haley_ssh.ipset
+    #- https://iplists.firehol.org/files/firehol_level2.netset
+    #- https://si3t.ch/pub/evils/prx-brutes.txt
 
-# Country list source: 'ipverse', 'ebrasha' or 'ipdeny'. Default: 'ipverse'
+# Country policy: 'block' or 'accept'.
+# block - block countries from list, accept others
+# accept - accept countries from list, block others
+## Default: 'block'
+country_policy: block
+
+# Country list source: 'ipverse', 'ebrasha' or 'ipdeny'.
 # ipverse - uses GitHub @ipverse as source (https://github.com/ipverse/geo-ip-blocks)
 # ebrasha - uses GitHub @ebrasha as source (https://github.com/ebrasha/cidr-ip-ranges-by-country)
 # ipdeny - uses ipdeny.com as source (https://www.ipdeny.com/ipblocks/)
+## Default: 'ipverse'
 country_list_source: ipverse
 
 # Country list: two letter country codes defined in ISO 3166-1
 # https://en.wikipedia.org/wiki/ISO_3166-1_alpha-2#Officially_assigned_code_elements
-country_list: [cn, vn]
-
-
-# Country policy: 'block' or 'accept'. Default: 'block'
-# block - block countries from list, accept others
-# accept - accept countries from list, block others
-country_policy: block
-
+country_list:
 
 # Country exclude ports: port numbers or names, e.g: [993, https]
 # List is available in /etc/services
 # These ports will be accessible on TCP and UDP protocols from all countries (but not from blacklisted IPs)
-country_exclude_ports: []
+country_exclude_ports:
+
+# urllib config
+#
+# Tell https client to ignore all SSL certificate errors
+# This can be set here or via the environment variable NFT_BLACKHOLE_IGNORE_CERTS or on the command line with
+# the --ignore-certs option. The environment variable takes precedence over the config file and the
+# command line option takes precedence over both of them.
+## Default: False
+ignore_certs: False
