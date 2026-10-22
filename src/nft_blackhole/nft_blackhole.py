@@ -16,7 +16,7 @@ import time
 from urllib.error import HTTPError
 import urllib.request
 
-from . import DEBUG_FLAG, NOT_PROVIDED, NotProvided
+from . import DEBUG_FLAG, ABSENT, Absent
 from .config import Config
 from .config_types import WHITELIST, BLACKLIST
 from .exceptions import ExitCode, NftbDataError, NftbError, NftbConfigError
@@ -26,7 +26,7 @@ from .logger import logger
 def start(config: Config):
     """Starting nft-blackhole"""
     logger.info('Starting nft-blackhole...')
-    ip_data: dict[str, dict[str, set[str]] | NotProvided] = fetch_all_lists(config)
+    ip_data: dict[str, dict[str, set[str]] | Absent] = fetch_all_lists(config)
     apply_nft_sets(config, ip_data)
 
     nft_template = config.jinja_env.get_template("nft-blackhole.j2")
@@ -63,11 +63,14 @@ def reload():
     logger.info("Re-loading nft-blackhole sets")
 
 
-def fetch_all_lists(config: Config) -> dict[str, dict[str, set[str]] | NotProvided]:
+def fetch_all_lists(config: Config) -> dict[str, dict[str, set[str]] | Absent]:
     '''Fetch all whitelist, blacklist and country lists with validation'''
-    whitelist_ips: dict[str, set[str]] | NotProvided = load_ip_sources(config.whitelist)
-    blacklist_ips: dict[str, set[str]] | NotProvided = load_ip_sources(config.blacklist)
-    country_ips: dict[str, set[str]] | NotProvided = get_country_ips(config)
+    print(f'WHITELIST CONFIG: {config.whitelist}')
+    print(f'BLACKLIST CONFIG: {config.blacklist}')
+    whitelist_ips: dict[str, set[str]] | Absent = load_ip_sources(config.whitelist)
+    blacklist_ips: dict[str, set[str]] | Absent = load_ip_sources(config.blacklist)
+    country_ips: dict[str, set[str]] | Absent = get_country_ips(config)
+
 
     ip_sets = {'whitelist': whitelist_ips, 'blacklist': blacklist_ips, 'country': country_ips}
 
@@ -149,7 +152,7 @@ def load_ip_sources(config_entry: WHITELIST | BLACKLIST) -> dict[str, set[str]]:
     return split_ip_versions(raw_ips)
 
 
-def get_country_ips(config: Config) -> dict[str, set[str]] | NotProvided:
+def get_country_ips(config: Config) -> dict[str, set[str]] | Absent:
     '''Fetch country IP lists based on configured source and return dict per IP version'''
     if not config.country_list:
         return {'v4': set(), 'v6': set()}
@@ -235,7 +238,7 @@ def split_ip_versions(ip_list) -> dict[str, set[str]]:
     return split_ips
 
 
-def apply_nft_sets(config: Config, ip_data: dict[str, dict[str, set[str]] | NotProvided], reload: bool=False):
+def apply_nft_sets(config: Config, ip_data: dict[str, dict[str, set[str]] | Absent], reload: bool=False):
     '''Create all nftables sets (whitelist, blacklist, country)'''
     print(f"!!!!! ip_data:\n\n{ip_data}\n\n")
     for set_type in ('whitelist', 'blacklist', 'country'):
@@ -286,10 +289,12 @@ def main():
     logger.info(f'NFT_BLACKHOLE_DEBUG: {DEBUG_FLAG}')
 
     try:
-        __version__ = version("package-name")
+        __version__ = version("nft-blackhole")
     except PackageNotFoundError:
         # package is not installed
         __version__ = '2.0.0'
+
+    logger.info(f'RUNNING NFT-BLACKHOLE VERSION: {__version__}')
 
     args = parse_cmd()
     cmd: str = args.cmd
@@ -329,11 +334,3 @@ def main():
         reload()
     elif cmd == 'config':
         print(config)
-
-
-if __name__ == '__main__':
-    try:
-        main()
-    except NtfbError as e:
-        logger.error(e)
-        sys.exit(ExitCode.EX_CONFIG)

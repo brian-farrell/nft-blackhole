@@ -7,7 +7,7 @@ from typing import ClassVar, override
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from . import NotProvided, NOT_PROVIDED
+from . import Absent, ABSENT
 from .config_types import Data, BLACKLIST, IPVERSION, WHITELIST
 from .exceptions import NftbConfigError
 from .logger import logger
@@ -80,9 +80,9 @@ class Config(object):
         self._block_policy: str
         self._chain_forward: str
         self._chain_output: str
-        self._country_exclude_ports: list[str] | NotProvided
+        self._country_exclude_ports: list[str] | Absent
         self._country_exclude_ports_rule: str
-        self._country_list: list[str] | NotProvided
+        self._country_list: list[str] | Absent
         self._country_list_source: str
         self._country_policy: str
         self._default_policy: str
@@ -163,7 +163,7 @@ class Config(object):
         self._chain_output = value
 
     @property
-    def country_exclude_ports(self) -> list[str] | NotProvided:
+    def country_exclude_ports(self) -> list[str] | Absent:
         return self._country_exclude_ports
 
     @country_exclude_ports.setter
@@ -177,7 +177,7 @@ class Config(object):
                 self.country_exclude_ports_template
             ).substitute(country_exclude_ports=self.country_exclude_ports)
         else:
-            self._country_exclude_ports = NOT_PROVIDED
+            self._country_exclude_ports = ABSENT
             self.country_exclude_ports_rule = ''
 
     @property
@@ -189,27 +189,27 @@ class Config(object):
         self._country_exclude_ports_rule = value
 
     @property
-    def country_list(self) -> list[str] | NotProvided:
+    def country_list(self) -> list[str] | Absent:
         return self._country_list
 
     @country_list.setter
-    def country_list(self, value: list[str] | NotProvided):
+    def country_list(self, value: list[str] | Absent):
         # Correct incorrect YAML parsing of no (Norway)
         # It should be the string 'no', but YAML interprets it as False
         # This is a hack due to the lack of YAML 1.2 support by PyYAML
         # Note that the boolean value False will be conveted to the
         # string 'False' by the Data dataclass in the config_types module.
-        if value is not NotProvided:
+        if value is not Absent:
             while 'False' in value:
                 value[value.index('False')] = 'no'
         self._country_list = value
 
     @property
-    def country_list_source(self) -> str | NotProvided:
+    def country_list_source(self) -> str | Absent:
         return self._country_list_source
 
     @country_list_source.setter
-    def country_list_source(self, value: str | NotProvided):
+    def country_list_source(self, value: str | Absent):
         self._country_list_source = value
 
     @property
@@ -274,8 +274,8 @@ class Config(object):
         self.block_output = _config.block_output
         self.block_policy = _config.block_policy or 'block'
         self.country_exclude_ports = _config.country_exclude_ports
-        self.country_list = _config.country_list or NOT_PROVIDED
-        self.country_list_source = _config.country_list_source or NOT_PROVIDED
+        self.country_list = _config.country_list or ABSENT
+        self.country_list_source = _config.country_list_source or ABSENT
         self.country_policy = _config.country_policy or 'block'
 
         if self.ignore_certs_env is not None:
