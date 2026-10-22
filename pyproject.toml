@@ -56,4 +56,4 @@ version_scheme = "python-simplified-semver"
 
 [tool.basedpyright]
 reportImplicitStringConcatenation = false
-#reportPrivateUsage = false
+reportPrivateUsage = false
