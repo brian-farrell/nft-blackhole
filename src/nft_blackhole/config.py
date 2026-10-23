@@ -1,4 +1,5 @@
 
+from dataclasses import fields
 import os
 from string import Template
 import sys
@@ -74,7 +75,7 @@ class Config(object):
 
     def __init__(self):
         self._active_ip_versions: list[str] = list()
-        self._blacklist: BLACKLIST
+        self._blacklist: BLACKLIST | Absent
         self._block_forward: bool
         self._block_output: bool
         self._block_policy: str
@@ -88,7 +89,7 @@ class Config(object):
         self._default_policy: str
         self._ignore_certs: bool  # urllib
         self._priority: int
-        self._whitelist: WHITELIST
+        self._whitelist: WHITELIST | Absent
 
         _config: Data = Config._load_config()  # pyright: ignore[reportAssignmentType]
         self._configure(_config)
@@ -115,11 +116,11 @@ class Config(object):
                 logger.info(f'No value found for {ip_v} in ip_version_support of config file.')
 
     @property
-    def blacklist(self) -> BLACKLIST:
+    def blacklist(self) -> BLACKLIST | Absent:
         return self._blacklist
 
     @blacklist.setter
-    def blacklist(self, value: BLACKLIST):
+    def blacklist(self, value: BLACKLIST | Absent):
         self._blacklist = value
 
     @property
@@ -250,17 +251,28 @@ class Config(object):
         self._priority = value
 
     @property
-    def whitelist(self) -> WHITELIST:
+    def whitelist(self) -> WHITELIST | Absent:
         return self._whitelist
 
     @whitelist.setter
-    def whitelist(self, value: WHITELIST):
+    def whitelist(self, value: WHITELIST | Absent):
         self._whitelist = value
 
     def _get_bool(self, value: str) -> bool:
         bool_value = self.bool_map.get(value.strip().lower(), False)
 
         return bool_value
+
+    def _check_bw_list(self, list_obj: BLACKLIST | WHITELIST | Absent) -> BLACKLIST | WHITELIST | Absent:
+        field_values = [field for field in list_obj]
+        check_absent = [field for field in map(bool, field_values)]
+        any_present = any(check_absent)
+
+        if not any_present:
+            list_obj = ABSENT
+
+        return list_obj
+
 
     def _configure(self, _config: Data) -> None:
         # ip_version_support is a required config value
@@ -269,7 +281,7 @@ class Config(object):
         else:
             self.active_ip_versions = _config.ip_version_support
 
-        self.blacklist = _config.blacklist
+        self.blacklist = self._check_bw_list(_config.blacklist)  # pyright: ignore[reportAttributeAccessIssue]
         self.block_forward = _config.block_forward
         self.block_output = _config.block_output
         self.block_policy = _config.block_policy or 'block'
@@ -283,7 +295,7 @@ class Config(object):
         else:
             self.ignore_certs = _config.ignore_certs
         self.priority = _config.priority
-        self.whitelist = _config.whitelist
+        self.whitelist = self._check_bw_list(_config.whitelist)  # pyright: ignore[reportAttributeAccessIssue]
 
         if self.block_output:
             self.chain_output = Template(self.output_template).substitute(

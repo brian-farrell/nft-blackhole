@@ -7,9 +7,9 @@ DEBUG_FLAG = bool(os.getenv('NFT_BLACKHOLE_DEBUG', False))
 
 # TODO: Replace this with a true `sentinel` class when python3.15 is widely availble
 # - see https://docs.python.org/3/builtins/functions.html#sentinel
-class NotProvidedSentinel(str):
+class AbsentSentinel(str):
 	"""
-	NotProvidedSentinel is a sentinel to indicate that no value was given by the user.
+	AbsentSentinel is a sentinel to indicate that no value was given by the user.
 	This is purposely different from `None` and does not mean that an expected value is missing.
 	It simply means that the user does not wish to provide a value, which is completely valid.
 	"""
@@ -21,12 +21,12 @@ class NotProvidedSentinel(str):
 
 		@override
 		def __str__(self) -> str:
-			return f"Not Provided"
+			return f"Absent"
 
 	def __new__(cls):
-		if not NotProvidedSentinel.instance:
-			NotProvidedSentinel.instance = NotProvidedSentinel._Absent()
-		return NotProvidedSentinel.instance
+		if not AbsentSentinel.instance:
+			AbsentSentinel.instance = AbsentSentinel._Absent()
+		return AbsentSentinel.instance
 
 	def __getattr__(self, attr_name: Any):  # pyright: ignore[reportAny, reportExplicitAny]
 		return getattr(self.instance, attr_name)  # pyright: ignore[reportAny]
@@ -35,5 +35,5 @@ class NotProvidedSentinel(str):
 	def __setattr__(self, attr_name: Any, value: Any):  # pyright: ignore[reportAny, reportExplicitAny]
 		return setattr(self.instance, attr_name, value)  # pyright: ignore[reportAny]
 
-Absent: TypeAlias = NotProvidedSentinel._Absent
+Absent: TypeAlias = AbsentSentinel._Absent
 ABSENT: Absent = Absent()
