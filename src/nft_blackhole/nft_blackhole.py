@@ -65,14 +65,39 @@ def reload():
 
 def fetch_all_lists(config: Config) -> dict[str, dict[str, set[str]] | Absent]:
     '''Fetch all whitelist, blacklist and country lists with validation'''
-    print(f'WHITELIST CONFIG: {config.whitelist}')
-    print(f'BLACKLIST CONFIG: {config.blacklist}')
-    whitelist_ips: dict[str, set[str]] | Absent = load_ip_sources(config.whitelist)
-    blacklist_ips: dict[str, set[str]] | Absent = load_ip_sources(config.blacklist)
+    whitelist_ips: dict[str, set[str]] | Absent
+    blacklist_ips: dict[str, set[str]] | Absent
+
+    print(f'\n\nHERE IN fetch_all_lists:\n\tWHITELIST: {config.whitelist}\n\tBLACKLIST: {config.blacklist}')
+    if config.whitelist is not ABSENT:
+        whitelist_ips = load_ip_sources(config.whitelist)  # pyright: ignore[reportArgumentType]
+    else:
+        whitelist_ips = ABSENT
+
+    if config.blacklist is not ABSENT:
+        blacklist_ips = load_ip_sources(config.blacklist)  # pyright: ignore[reportArgumentType]
+    else:
+        blacklist_ips = ABSENT
+
     country_ips: dict[str, set[str]] | Absent = get_country_ips(config)
 
 
     ip_sets = {'whitelist': whitelist_ips, 'blacklist': blacklist_ips, 'country': country_ips}
+
+    if DEBUG_FLAG:
+        with open('./reference/ip_sets_debug.text', 'a') as file_handle:
+            for list_key in ip_sets:  # list_key(s): 'whitelist', 'blacklist', 'country'
+                for ip_ver in ip_sets[list_key]: # ip_sets[list_key]: {'v4': set(), 'v6': set()}
+                    #print(f'fetch_all_lists list_key: {list_key}[{ip_sets}][{ip_ver}]')
+                    #print(f'\n\n\nfetch_all_lists list_key: {list_key}')
+                    #print(f'\n\n\nfetch_all_lists ip_sets[list_key]: {ip_sets[list_key]}')
+                    ip_sets_list_key_ip_ver = ip_sets[list_key][ip_ver]
+                    print(f'\n\n\nip_sets_list_key_ip_ver = {ip_sets}[{list_key}][{ip_ver}]!!!!!\n{ip_sets_list_key_ip_ver}\n\n\n')
+                    
+                    if ip_sets_list_key_ip_ver:
+                        writeable = [*ip_sets_list_key_ip_ver]
+                        for item in writeable:
+                            _ = file_handle.write(f'{item}\n')
 
     return ip_sets
 
@@ -155,12 +180,13 @@ def load_ip_sources(config_entry: WHITELIST | BLACKLIST) -> dict[str, set[str]]:
 def get_country_ips(config: Config) -> dict[str, set[str]] | Absent:
     '''Fetch country IP lists based on configured source and return dict per IP version'''
     if not config.country_list:
-        return {'v4': set(), 'v6': set()}
+        # return {'v4': set(), 'v6': set()}
+        return ABSENT
 
     urls: list[str] = []
     url_string: str
     url_templates: dict[str, str | dict[str, str]] = config.url_templates
-    print(f'COUNTRY LIST TEMPLATES:\n{url_templates}')
+    print(f'\n\nCOUNTRY LIST TEMPLATES:\n{url_templates}')
     for ip_ver in config.ip_version_support:
         for country in config.country_list:
             if config.country_list_source == 'ebrasha':
@@ -240,7 +266,7 @@ def split_ip_versions(ip_list) -> dict[str, set[str]]:
 
 def apply_nft_sets(config: Config, ip_data: dict[str, dict[str, set[str]] | Absent], reload: bool=False):
     '''Create all nftables sets (whitelist, blacklist, country)'''
-    print(f"!!!!! ip_data:\n\n{ip_data}\n\n")
+    print(f"\n\n!!!!! ip_data:\n\n{ip_data}\n\n")
     for set_type in ('whitelist', 'blacklist', 'country'):
         for ip_ver in config.ip_version_support:
             set_name = f'{set_type}-{ip_ver}'
@@ -249,10 +275,13 @@ def apply_nft_sets(config: Config, ip_data: dict[str, dict[str, set[str]] | Abse
             nft_set = (
                 Template(config.nft_set_template).substitute(ip_ver=f'ip{ip_ver}', set_name=set_name, ip_list=set_list)
             )
-            if reload:
-                _ = run(['nft', 'flush', 'set', 'inet', 'blackhole', set_name], check=False)
-            if ip_list:
-                _ = run(['nft', '-f', '-'], input=nft_set.encode(), check=True)
+            if not DEBUG_FLAG:
+                if reload:
+                    _ = run(['nft', 'flush', 'set', 'inet', 'blackhole', set_name], check=False)
+                if ip_list:
+                    _ = run(['nft', '-f', '-'], input=nft_set.encode(), check=True)
+            else:
+                logger.info(f'apply_nft_sets: was going to run nft command, but DEBUG_FLAG is {DEBUG_FLAG}')
 
 
 @dataclass
