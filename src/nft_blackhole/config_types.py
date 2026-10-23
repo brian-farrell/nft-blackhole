@@ -44,6 +44,11 @@ class WHITELIST:
     file: list[str] | None
     url: list[str] | None
 
+    def __iter__(self):
+        for field in self.__dataclass_fields__:
+            yield getattr(self, field)
+
+
 
 @dataclass
 class BLACKLIST:
@@ -54,3 +59,7 @@ class BLACKLIST:
     static: list[str] | None
     file: list[str] | None
     url: list[str] | None
+
+    def __iter__(self):
+        for field in self.__dataclass_fields__:
+            yield getattr(self, field)
