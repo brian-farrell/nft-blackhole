@@ -38,9 +38,10 @@ priority: -1
 # url    - URLs to remote lists
 whitelist:
   static:
-    #- 127.0.0.1/8
-    ## - 10.10.10.10/24
-    #- 192.168.0.1/16
+    - 127.0.0.1/32
+    - 10.9.8.0/24
+    - 192.168.1.0/24
+    - FD00::/8
     #- 2001:db8:5afe::/64
   file:
     # - /etc/nft-blackhole/whitelist.local
@@ -58,16 +59,18 @@ whitelist:
 blacklist:
   static:
     # Examples of single IPs or network addresses (RFC 5737 / RFC 3849):
-    #- 198.51.100.42
-    #- 192.0.2.0/24
-    #- 2001:db8:bad:c0de::/64
+    # Addresses starting with "192.0.2.", "198.51.100.", or "203.0.113." are reserved for
+    # use in documentation and sample configurations.
+    - 198.51.100.42
+    - 192.0.2.0/24
+    # - 2001:db8:bad:c0de::/64
   file:
     # - /etc/nft-blackhole/blacklist.local
   url:
-    #- https://iplists.firehol.org/files/bi_any_0_1d.ipset
-    #- https://iplists.firehol.org/files/haley_ssh.ipset
-    #- https://iplists.firehol.org/files/firehol_level2.netset
-    #- https://si3t.ch/pub/evils/prx-brutes.txt
+    - https://iplists.firehol.org/files/bi_any_0_1d.ipset
+    - https://iplists.firehol.org/files/haley_ssh.ipset
+    - https://iplists.firehol.org/files/firehol_level2.netset
+    - https://si3t.ch/pub/evils/prx-brutes.txt
 
 # Country policy: 'block' or 'accept'.
 # block - block countries from list, accept others
@@ -85,6 +88,7 @@ country_list_source: ipverse
 # Country list: two letter country codes defined in ISO 3166-1
 # https://en.wikipedia.org/wiki/ISO_3166-1_alpha-2#Officially_assigned_code_elements
 country_list:
+    - fi
 
 # Country exclude ports: port numbers or names, e.g: [993, https]
 # List is available in /etc/services
