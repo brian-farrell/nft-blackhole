@@ -1,17 +1,17 @@
 
-from dataclasses import fields
+from enum import StrEnum
 import os
 from string import Template
-import sys
 from textwrap import dedent
-from typing import ClassVar, override
+import tomllib
+from typing import Any, ClassVar, override
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from . import Absent, ABSENT
-from .config_types import Data, BLACKLIST, IPVERSION, WHITELIST
 from .exceptions import NftbConfigError
 from .logger import logger
+
 
 class Config(object):
     """The Config object holds all configuration values.
@@ -75,7 +75,7 @@ class Config(object):
 
     def __init__(self):
         self._active_ip_versions: list[str] = list()
-        self._blacklist: BLACKLIST | Absent
+        self._blacklist: AddressList | Absent
         self._block_forward: bool
         self._block_output: bool
         self._block_policy: str
@@ -89,10 +89,10 @@ class Config(object):
         self._default_policy: str
         self._ignore_certs: bool  # urllib
         self._priority: int
-        self._whitelist: WHITELIST | Absent
+        self._whitelist: AddressList | Absent
 
-        _config: Data = Config._load_config()  # pyright: ignore[reportAssignmentType]
-        self._configure(_config)
+        _config: dict[str, Any] | Exception = Config._load_config()
+        self._configure(_config)  # pyright: ignore[reportArgumentType]
 
         self.jinja_env: Environment = Environment(
             loader=FileSystemLoader("/usr/local/share/nft-blackhole"),
@@ -106,21 +106,20 @@ class Config(object):
         return self._active_ip_versions
 
     @active_ip_versions.setter
-    def active_ip_versions(self, value: IPVERSION):  # pyright: ignore[reportPropertyTypeMismatch]
+    def active_ip_versions(self, value: dict[str, bool]) -> None:  # pyright: ignore[reportPropertyTypeMismatch]
         for ip_v in self.ip_version_support:
-            try:
-                v: bool = getattr(value, ip_v)  # pyright: ignore[reportAny]
-                if v:
-                    self._active_ip_versions.append(ip_v)
-            except AttributeError:
-                logger.info(f'No value found for {ip_v} in ip_version_support of config file.')
+            v: bool = value.get(ip_v, False)
+            if v:
+                self._active_ip_versions.append(ip_v)
+        if not self._active_ip_versions:
+            raise NftbConfigError("Config file does not provide an active IP version. Exiting...")
 
     @property
-    def blacklist(self) -> BLACKLIST | Absent:
+    def blacklist(self) -> AddressList | Absent:
         return self._blacklist
 
     @blacklist.setter
-    def blacklist(self, value: BLACKLIST | Absent):
+    def blacklist(self, value: AddressList | Absent) -> None:
         self._blacklist = value
 
     @property
@@ -128,7 +127,7 @@ class Config(object):
         return self._block_forward
 
     @block_forward.setter
-    def block_forward(self, value: bool):
+    def block_forward(self, value: bool) -> None:
         self._block_forward = value
 
     @property
@@ -136,7 +135,7 @@ class Config(object):
         return self._block_output
 
     @block_output.setter
-    def block_output(self, value: bool):
+    def block_output(self, value: bool) -> None:
         self._block_output = value
 
     @property
@@ -144,7 +143,7 @@ class Config(object):
         return self._block_policy
 
     @block_policy.setter
-    def block_policy(self, value: str):
+    def block_policy(self, value: str) -> None:
         self._block_policy = value
 
     @property
@@ -152,7 +151,7 @@ class Config(object):
         return self._chain_forward
 
     @chain_forward.setter
-    def chain_forward(self, value: str):
+    def chain_forward(self, value: str) -> None:
         self._chain_forward = value
 
     @property
@@ -160,7 +159,7 @@ class Config(object):
         return self._chain_output
 
     @chain_output.setter
-    def chain_output(self, value: str):
+    def chain_output(self, value: str) -> None:
         self._chain_output = value
 
     @property
@@ -168,7 +167,7 @@ class Config(object):
         return self._country_exclude_ports
 
     @country_exclude_ports.setter
-    def country_exclude_ports(self, value: list[int | str] | None):  # pyright: ignore[reportPropertyTypeMismatch]
+    def country_exclude_ports(self, value: list[int | str] | None) -> None:  # pyright: ignore[reportPropertyTypeMismatch]
         if value == []:
             value = None
         if value:
@@ -186,7 +185,7 @@ class Config(object):
         return self._country_exclude_ports_rule
 
     @country_exclude_ports_rule.setter
-    def country_exclude_ports_rule(self, value: str):
+    def country_exclude_ports_rule(self, value: str) -> None:
         self._country_exclude_ports_rule = value
 
     @property
@@ -200,9 +199,6 @@ class Config(object):
         # This is a hack due to the lack of YAML 1.2 support by PyYAML
         # Note that the boolean value False will be conveted to the
         # string 'False' by the Data dataclass in the config_types module.
-        if value is not Absent:
-            while 'False' in value:
-                value[value.index('False')] = 'no'
         self._country_list = value
 
     @property
@@ -251,11 +247,11 @@ class Config(object):
         self._priority = value
 
     @property
-    def whitelist(self) -> WHITELIST | Absent:
+    def whitelist(self) -> AddressList | Absent:
         return self._whitelist
 
     @whitelist.setter
-    def whitelist(self, value: WHITELIST | Absent):
+    def whitelist(self, value: AddressList | Absent):
         self._whitelist = value
 
     def _get_bool(self, value: str) -> bool:
@@ -263,39 +259,51 @@ class Config(object):
 
         return bool_value
 
-    def _check_bw_list(self, list_obj: BLACKLIST | WHITELIST | Absent) -> BLACKLIST | WHITELIST | Absent:
-        field_values = [field for field in list_obj]
-        check_absent = [field for field in map(bool, field_values)]
-        any_present = any(check_absent)
+    def _configure(self, _config: dict[str, Any]) -> None:
+        self.active_ip_versions = _config['active_ip_versions']
 
-        if not any_present:
-            list_obj = ABSENT
+        _blacklist_ips: list[str] | Absent = ABSENT
+        _blacklist_files: list[str] | Absent = ABSENT
+        _blacklist_urls: list[str] | Absent = ABSENT
+        _blacklist = _config.get('blacklist', ABSENT)
 
-        return list_obj
+        if _blacklist:
+            (_blacklist_ips := _blacklist.get('ips') or ABSENT)
+            (_blacklist_files := _blacklist.get('files') or ABSENT)
+            (_blacklist_urls := _blacklist.get('urls') or ABSENT)
 
-
-    def _configure(self, _config: Data) -> None:
-        # ip_version_support is a required config value
-        if not _config.ip_version_support.v4 and not _config.ip_version_support.v6:
-            raise NftbConfigError('No ip_version_support is turned on in config file. Exiting...')
+        if _blacklist is ABSENT:
+            self.blacklist = ABSENT
+        elif all((_blacklist_files is ABSENT, _blacklist_ips is ABSENT, _blacklist_urls is ABSENT)):
+            self.blacklist = ABSENT
         else:
-            self.active_ip_versions = _config.ip_version_support
+            self.blacklist = AddressList(AddressListType.BLACKLIST, _blacklist_ips, _blacklist_files, _blacklist_urls)
 
-        self.blacklist = self._check_bw_list(_config.blacklist)  # pyright: ignore[reportAttributeAccessIssue]
-        self.block_forward = _config.block_forward
-        self.block_output = _config.block_output
-        self.block_policy = _config.block_policy or 'block'
-        self.country_exclude_ports = _config.country_exclude_ports
-        self.country_list = _config.country_list or ABSENT
-        self.country_list_source = _config.country_list_source or ABSENT
-        self.country_policy = _config.country_policy or 'block'
+        self.block_forward = _config.get('block_forward', ABSENT)
+        self.block_output = _config.get('block_output', ABSENT)
+        self.block_policy = _config.get('block_policy', 'block')
+        self.country_exclude_ports = _config.get('country_exclude_ports', ABSENT)
+        self.country_list = _config.get('country_list', ABSENT)
+        self.country_list_source = _config.get('country_list_source', ABSENT)
+        self.country_policy = _config.get('country_policy', 'block')
 
         if self.ignore_certs_env is not None:
             self.ignore_certs = self._get_bool(self.ignore_certs_env)
         else:
-            self.ignore_certs = _config.ignore_certs
-        self.priority = _config.priority
-        self.whitelist = self._check_bw_list(_config.whitelist)  # pyright: ignore[reportAttributeAccessIssue]
+            self.ignore_certs = _config.get('ignore_certs', False)
+        self.priority = _config.get('priority', -1)
+
+        _whitelist_ips: list[str] | Absent = ABSENT
+        _whitelist_files: list[str] | Absent = ABSENT
+        _whitelist_urls: list[str] | Absent = ABSENT
+        _whitelist = _config.get('whitelist')
+
+        if _whitelist:
+            (_whitelist_ips := _whitelist.get('ips') or ABSENT)
+            (_whitelist_files := _whitelist.get('files') or ABSENT)
+            (_whitelist_urls := _whitelist.get('urls') or ABSENT)
+
+        self.whitelist = AddressList(AddressListType.WHITELIST, _whitelist_ips, _whitelist_files, _whitelist_urls)
 
         if self.block_output:
             self.chain_output = Template(self.output_template).substitute(
@@ -316,21 +324,27 @@ class Config(object):
             self.chain_forward = ''
 
     @classmethod
-    def _load_config(cls) -> Data | list[Data]:
+    def _load_config(cls) -> dict[str, Any] | Exception:
         try:
-            with open(cls.nft_blackhole_config, 'r') as stream:
-                data: Data | list[Data] = Data.from_yaml(stream)  # pyright: ignore[reportUnknownMemberType]
+            with open(cls.nft_blackhole_config, 'rb') as stream:
+                data = tomllib.load(stream)
         except FileNotFoundError:
-            logger.error(f"No config file found at {cls.nft_blackhole_config}. Exiting.")
-            sys.exit(78)
+            msg = f"No config file found at: {cls.nft_blackhole_config}. Exiting..."
+            raise NftbConfigError(msg)
+        except tomllib.TOMLDecodeError:
+            msg = f"Error parsing TOML file: {cls.nft_blackhole_config}. Exiting..."
+            raise NftbConfigError(msg)
         else:
             logger.info(f"Config loaded from {cls.nft_blackhole_config}")
             return data
 
+
     @override
     def __str__(self):
         config = f"""
-        blacklist: {self.blacklist}
+        blacklist_ips: {self.blacklist.ips if self.blacklist is not ABSENT else ABSENT}
+        blacklist_files: {self.blacklist.files if self.blacklist is not ABSENT else ABSENT}
+        blacklist_urls: {self.blacklist.urls if self.blacklist is not ABSENT else ABSENT}
         block_forward: {self.block_forward}
         block_policy: {self.block_policy}
         block_output: {self.block_output}
@@ -340,9 +354,84 @@ class Config(object):
         country_exclude_ports: {self.country_exclude_ports}
         default_policy: {self.default_policy}
         ignore_certs: {self.ignore_certs}
-        ip_version_support: {self.active_ip_versions}
+        active_ip_versions: {self.active_ip_versions}
         priority: {self.priority}
-        whitelist: {self.whitelist}
+        whitelist_ips: {self.whitelist.ips if self.whitelist is not ABSENT else ABSENT}
+        whitelist_files: {self.whitelist.files if self.whitelist is not ABSENT else ABSENT}
+        whitelist_urls: {self.whitelist.urls if self.whitelist is not ABSENT else ABSENT}
         """
         return dedent(config)
 
+
+class AddressListType(StrEnum):
+    """docstring for AddressList"""
+    BLACKLIST = 'BLACKLIST'
+    WHITELIST = 'WHITELIST'
+    ABSENT = ABSENT
+        
+
+class AddressList(object):
+    """docstring for IPVersion"""
+    def __init__(
+        self,
+        list_type: AddressListType,
+        ips: list[str] | Absent = ABSENT,
+        files: list[str] | Absent = ABSENT,
+        urls: list[str] | Absent = ABSENT
+    ):
+        self._list_type: AddressListType = list_type
+        self._ips: list[str] | Absent = ips
+        self._files: list[str] | Absent = files
+        self._urls: list[str] | Absent = urls
+        self._nft_set: set[str] | Absent = ABSENT
+
+    @property
+    def list_type(self) -> StrEnum:
+        return self._list_type
+
+    @list_type.setter
+    def list_type(self, value: AddressListType) -> None:
+        self._list_type = value
+
+    @property
+    def ips(self) -> list[str] | Absent:
+        return self._ips
+
+    @ips.setter
+    def ips(self, value: list[str]) -> None:
+        if value:
+            self._ips = value
+        else:
+            self._ips = ABSENT
+
+    @property
+    def files(self) -> list[str] | Absent:
+        return self._files
+
+    @files.setter
+    def files(self, value: list[str]) -> None:
+        if value:
+            self._files = value
+        else:
+            self._files = ABSENT
+    @property
+    def urls(self) -> list[str] | Absent:
+        return self._urls
+
+    @urls.setter
+    def urls(self, value: list[str]) -> None:
+        if value:
+            self._urls = value
+        else:
+            self._urls = ABSENT
+
+    @property
+    def nft_set(self) -> set[str] | Absent:
+        return self._nft_set
+
+    @nft_set.setter
+    def nft_set(self, value: list[str]) -> None:  # pyright: ignore[reportPropertyTypeMismatch]
+        if value:
+            self._nft_set = set(value)
+        else:
+            self._nft_set = ABSENT

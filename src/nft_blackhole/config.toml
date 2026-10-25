@@ -1,0 +1,108 @@
+
+# Config file for nft-blackhole
+# Block policy: 'drop' or 'reject'.
+## Default: 'drop'
+block_policy = 'drop'
+
+# Block output connections to blacklisted ips: true or false.
+# Connections to blocked countries will still be possible.
+## Default: false
+block_output = false
+
+# Block forwarded connections from blacklisted ips: 'on' or 'off'.
+## Default: 'off'
+block_forward = false
+
+# Chain priority in nftables: integer or standard priority name.
+# Lower values have higher priority and are processed first.
+## Default: -1
+priority = -1
+
+# Country policy: 'block' or 'accept'.
+# block - block countries from list, accept others
+# accept - accept countries from list, block others
+## Default: 'block'
+country_policy = 'block'
+
+# Country list source: 'ipverse', 'ebrasha' or 'ipdeny'.
+# ipverse - uses GitHub @ipverse as source (https://github.com/ipverse/geo-ip-blocks)
+# ebrasha - uses GitHub @ebrasha as source (https://github.com/ebrasha/cidr-ip-ranges-by-country)
+# ipdeny - uses ipdeny.com as source (https://www.ipdeny.com/ipblocks/)
+## Default: 'ipverse'
+country_list_source = 'ipverse'
+
+# Country list: two letter country codes defined in ISO 3166-1
+# https://en.wikipedia.org/wiki/ISO_3166-1_alpha-2#Officially_assigned_code_elements
+country_list = ['fi']
+
+# Country exclude ports: port numbers or names, e.g: [993, https]
+# List is available in /etc/services
+# These ports will be accessible on TCP and UDP protocols from all countries (but not from blacklisted IPs)
+country_exclude_ports = []
+
+# urllib config
+#
+# Tell https client to ignore all SSL certificate errors
+# This can be set here or via the environment variable NFT_BLACKHOLE_IGNORE_CERTS or on the command line with
+# the --ignore-certs option. The environment variable takes precedence over the config file and the
+# command line option takes precedence over both of them.
+## Default: false
+ignore_certs = false
+
+[active_ip_versions]
+# IP versions supported: true or false. If BOTH versions are set to false, app will terminate
+# without making any changes.
+## Default: 'false'
+v4 = true
+v6 = true
+
+[blacklist]
+# Blacklist: IP or network addresses from static entries, local files or remote blacklist URLs
+# Supports IPv4, IPv6 and mixed formats:
+# static - direct IP addresses or networks
+# file   - paths to local files
+# url    - URLs to remote blacklists
+ips = [
+	# Examples of single IPs or network addresses (RFC 5737 / RFC 3849):
+	# Addresses starting with "192.0.2.", "198.51.100.", or "203.0.113." are reserved for
+	# use in documentation and sample configurations.
+	'198.51.100.42',
+	'192.0.2.0/24',
+	#'2001:db8:bad:c0de::/64'
+]
+
+files = [
+	#'/etc/nft-blackhole/blacklist.local'
+]
+
+urls = [
+	'https://iplists.firehol.org/files/bi_any_0_1d.ipset',
+	'https://iplists.firehol.org/files/haley_ssh.ipset',
+	'https://iplists.firehol.org/files/firehol_level2.netset',
+	'https://si3t.ch/pub/evils/prx-brutes.txt',
+]
+
+[whitelist]
+# Whitelist: IP or network addresses from static entries, local files or remote list URLs
+# Supports IPv4, IPv6 and mixed formats:
+# static - direct IP addresses or networks
+# file   - paths to local files
+# url    - URLs to remote lists
+
+ips = [
+	'127.0.0.1/32',
+	'10.9.8.0/24',
+	'192.168.1.0/24',
+	'FD00::/8',
+	#'2001:db8:5afe::/64'
+]
+
+files = [
+	#'/etc/nft-blackhole/whitelist.local'
+]
+
+urls = [
+	# Example remote lists (e.g. Cloudflare IP ranges):
+	'https://www.cloudflare.com/ips-v4/#',
+	'https://www.cloudflare.com/ips-v6/#',
+]
