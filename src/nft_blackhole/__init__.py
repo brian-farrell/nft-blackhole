@@ -28,12 +28,12 @@ class AbsentSentinel(str):
 			AbsentSentinel.instance = AbsentSentinel._Absent()
 		return AbsentSentinel.instance
 
-	def __getattr__(self, attr_name: Any):  # pyright: ignore[reportAny, reportExplicitAny]
-		return getattr(self.instance, attr_name)  # pyright: ignore[reportAny]
+	def __getattr__(self, attr_name: Any):
+		return getattr(self.instance, attr_name)
 
 	@override
-	def __setattr__(self, attr_name: Any, value: Any):  # pyright: ignore[reportAny, reportExplicitAny]
-		return setattr(self.instance, attr_name, value)  # pyright: ignore[reportAny]
+	def __setattr__(self, attr_name: Any, value: Any):
+		return setattr(self.instance, attr_name, value)
 
 Absent: TypeAlias = AbsentSentinel._Absent
 ABSENT: Absent = Absent()
