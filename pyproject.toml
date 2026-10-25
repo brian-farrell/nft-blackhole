@@ -14,13 +14,8 @@ requires-python = ">=3.12"
 dependencies = [
     # Python systemd wrapper using Cython.
     "cysystemd>=2.0.5",
-    # A fast, well-tested serialization library for Python dataclasses with
-    # automatic type conversion and support for JSON, YAML, TOML
-    "dataclass-wizard>=1.0.0",
     # A very fast and expressive template engine.
     "jinja2>=3.1.6",
-    # YAML parser and emitter for Python
-    "pyyaml>=6.0.3"
 ]
 
 [project.optional-dependencies]
@@ -55,5 +50,8 @@ build-backend = "setuptools.build_meta"
 version_scheme = "python-simplified-semver"
 
 [tool.basedpyright]
+exclude = ["**/reference"]
+reportAny = false
+reportExplicitAny = false
 reportImplicitStringConcatenation = false
 reportPrivateUsage = false
