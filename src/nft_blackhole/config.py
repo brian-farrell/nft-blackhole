@@ -383,7 +383,9 @@ class AddressList(object):
         self._ips: list[str] | Absent = ips
         self._files: list[str] | Absent = files
         self._urls: list[str] | Absent = urls
-        self._nft_set: set[str] | Absent = ABSENT
+        self._nft_set_v4: set[str] = set()
+        self._nft_set_v6: set[str] = set()
+        self._resolved_ips: list[str] = list()
 
     @property
     def list_type(self) -> StrEnum:
@@ -426,12 +428,18 @@ class AddressList(object):
             self._urls = ABSENT
 
     @property
-    def nft_set(self) -> set[str] | Absent:
-        return self._nft_set
+    def nft_set_v4(self) -> set[str]:
+        return self._nft_set_v4
 
-    @nft_set.setter
-    def nft_set(self, value: list[str]) -> None:  # pyright: ignore[reportPropertyTypeMismatch]
-        if value:
-            self._nft_set = set(value)
-        else:
-            self._nft_set = ABSENT
+    @property
+    def nft_set_v6(self) -> set[str]:
+        return self._nft_set_v6
+
+    def split_ip_versions(self, ip_list: list[str]) -> None:
+        '''Split mixed list into deduplicated IPv4 and IPv6 sets'''
+        for line in ip_list:
+            line = line.partition('#')[0].strip()  # Watch for comments to right of ips from config
+            if ':' in line:
+                self.nft_set_v6.add(line)
+            elif '.' in line:
+                self.nft_set_v4.add(line)
