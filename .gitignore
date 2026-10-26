@@ -48,6 +48,7 @@ env/
 
 # Project-specific
 .venv/
+debug/
 
 # Test
 cover/
