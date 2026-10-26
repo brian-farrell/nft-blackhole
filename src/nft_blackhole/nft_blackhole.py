@@ -8,6 +8,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from http.client import HTTPResponse
 from importlib.metadata import version, PackageNotFoundError
+from pathlib import Path
+from re import DEBUG
 import ssl
 from string import Template
 from subprocess import run
@@ -17,17 +19,24 @@ from urllib.error import HTTPError
 import urllib.request
 
 from . import DEBUG_FLAG, ABSENT, Absent
-from .config import Config
-from .config_types import WHITELIST, BLACKLIST
-from .exceptions import ExitCode, NftbDataError, NftbError, NftbConfigError
+from .config import Config, AddressList
+from .exceptions import NftbError
 from .logger import logger
 
 
 def start(config: Config):
     """Starting nft-blackhole"""
     logger.info('Starting nft-blackhole...')
-    ip_data: dict[str, dict[str, set[str]] | Absent] = fetch_all_lists(config)
-    apply_nft_sets(config, ip_data)
+    # TODO: FIX BELOW
+    #####ip_data: dict[str, dict[str, set[str]] | Absent] = fetch_all_lists(config)
+    _ = fetch_all_lists(config)
+
+    #####if DEBUG_FLAG:
+    #####    print(f'v4 blacklist set:\n\n{config.blacklist.nft_set_v4}\n\n')
+    #####    print(f'v6 blacklist set:\n\n{config.blacklist.nft_set_v6}\n\n')
+    
+    # TODO: FIX BELOW
+    #####apply_nft_sets(config, ip_data)
 
     nft_template = config.jinja_env.get_template("nft-blackhole.j2")
     nft_conf = nft_template.render(
@@ -63,118 +72,53 @@ def reload():
     logger.info("Re-loading nft-blackhole sets")
 
 
-def fetch_all_lists(config: Config) -> dict[str, dict[str, set[str]] | Absent]:
+def fetch_all_lists(config: Config) -> None:
     '''Fetch all whitelist, blacklist and country lists with validation'''
-    whitelist_ips: dict[str, set[str]] | Absent
-    blacklist_ips: dict[str, set[str]] | Absent
-
     print(f'\n\nHERE IN fetch_all_lists:\n\tWHITELIST: {config.whitelist}\n\tBLACKLIST: {config.blacklist}')
     if config.whitelist is not ABSENT:
-        whitelist_ips = load_ip_sources(config.whitelist)  # pyright: ignore[reportArgumentType]
-    else:
-        whitelist_ips = ABSENT
+        whitelist_ips = load_ip_sources(config.whitelist)
+        _ = config.whitelist.split_ip_versions(whitelist_ips)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
 
     if config.blacklist is not ABSENT:
-        blacklist_ips = load_ip_sources(config.blacklist)  # pyright: ignore[reportArgumentType]
-    else:
-        blacklist_ips = ABSENT
+        blacklist_ips = load_ip_sources(config.blacklist)
+        _ = config.blacklist.split_ip_versions(blacklist_ips)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
 
-    country_ips: dict[str, set[str]] | Absent = get_country_ips(config)
-
-
-    ip_sets = {'whitelist': whitelist_ips, 'blacklist': blacklist_ips, 'country': country_ips}
-
-    if DEBUG_FLAG:
-        with open('./reference/ip_sets_debug.text', 'a') as file_handle:
-            for list_key in ip_sets:  # list_key(s): 'whitelist', 'blacklist', 'country'
-                for ip_ver in ip_sets[list_key]: # ip_sets[list_key]: {'v4': set(), 'v6': set()}
-                    #print(f'fetch_all_lists list_key: {list_key}[{ip_sets}][{ip_ver}]')
-                    #print(f'\n\n\nfetch_all_lists list_key: {list_key}')
-                    #print(f'\n\n\nfetch_all_lists ip_sets[list_key]: {ip_sets[list_key]}')
-                    ip_sets_list_key_ip_ver = ip_sets[list_key][ip_ver]
-                    print(f'\n\n\nip_sets_list_key_ip_ver = {ip_sets}[{list_key}][{ip_ver}]!!!!!\n{ip_sets_list_key_ip_ver}\n\n\n')
-                    
-                    if ip_sets_list_key_ip_ver:
-                        writeable = [*ip_sets_list_key_ip_ver]
-                        for item in writeable:
-                            _ = file_handle.write(f'{item}\n')
-
-    return ip_sets
+    #####country_ips: dict[str, set[str]] | Absent = get_country_ips(config)
 
 
-def load_ip_sources(config_entry: WHITELIST | BLACKLIST) -> dict[str, set[str]]:
+def load_ip_sources(address_list: AddressList | Absent) -> list[str]:
     '''Load IP sources: extract direct IPs, read local files, and fetch URLs, splitting into v4 and v6'''
-    raw_ips = []
-    file_paths = []
-    urls = []
-
-    def to_list(val):
-        if not val:
-            return []
-        if isinstance(val, list):
-            return val
-        return [val]
-
-    if isinstance(config_entry, dict):
-        if any(k in config_entry for k in ('static', 'file', 'url')):
-            raw_ips.extend(to_list(config_entry.get('static')))
-            file_paths.extend(to_list(config_entry.get('file')))
-            urls.extend(to_list(config_entry.get('url')))
-        else:
-            # BACKWARD COMPATIBILITY: Legacy dictionary format (v4, v6).
-            # Remove this block when migrating fully to static/file/url format.
-            for key in ['v4', 'v6']:
-                for item in to_list(config_entry.get(key)):
-                    item_str = str(item).strip()
-                    if item_str.startswith(('http://', 'https://')):
-                        urls.append(item_str)
-                    else:
-                        raw_ips.append(item_str)
-            # END BACKWARD COMPATIBILITY
-    elif isinstance(config_entry, list):
-        # BACKWARD COMPATIBILITY: Flat list format.
-        # Remove this block when migrating fully to static/file/url format.
-        for item in config_entry:
-            if not item:
-                continue
-            item_str = str(item).strip()
-            if item_str.startswith(('http://', 'https://')):
-                urls.append(item_str)
-            else:
-                raw_ips.append(item_str)
-        # END BACKWARD COMPATIBILITY
-
     # Read local files
-    for filepath in file_paths:
-        if not filepath:
-            continue
-        filepath = str(filepath).strip()
-        if not filepath or filepath.startswith('#'):
-            continue
-        try:
-            with open(filepath, 'r') as f:
-                raw_ips.extend(f.readlines())
-        except OSError as exc:
-            print(f'ERROR: Failed to read local file {filepath}: {exc}', file=sys.stderr)
-            return None
+    resolved_ips: list[str] = list()
 
-    # Fetch URLs
-    if urls:
-        clean_urls = []
-        for u in urls:
-            if not u:
+    # Files
+    if address_list.files is not ABSENT:  # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
+        for path in address_list.files:  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
+            if path.startswith('#'):  # pyright: ignore[reportUnknownMemberType]
                 continue
-            u_str = str(u).strip()
-            if u_str and not u_str.startswith('#'):
-                clean_urls.append(u_str)
+            file_path = Path(path).resolve()  # pyright: ignore[reportUnknownArgumentType]
+            try:
+                with open(file_path, 'r') as f:
+                    resolved_ips.extend(f.readlines())
+            except OSError:
+                logger.error(f'Failed to read local file {file_path}')
+                continue
+        
+    # URLs
+    if address_list.urls is not ABSENT:  # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
+        clean_urls: list[str] = list()
+        url: str
+        for url in address_list.urls:  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
+            if url.startswith('#'):  # pyright: ignore[reportUnknownMemberType]
+                continue
+            else:
+                url = url.strip()  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
+                clean_urls.append(url)  # pyright: ignore[reportUnknownArgumentType]
         if clean_urls:
-            unique_urls = list(dict.fromkeys(clean_urls))
-            downloaded = get_urls(unique_urls)
-            if downloaded is None:
-                return None
-            raw_ips.extend(downloaded)
+            downloaded = get_urls(clean_urls)
+            resolved_ips.extend(downloaded)
 
-    return split_ip_versions(raw_ips)
+    return resolved_ips
 
 
 def get_country_ips(config: Config) -> dict[str, set[str]] | Absent:
@@ -241,27 +185,6 @@ def get_urls(urls: list[str], max_retries: int=3, retry_delay: int=5, timeout: i
                 return list()
             ip_list_aggregated += ip_list
     return ip_list_aggregated
-
-
-def split_ip_versions(ip_list) -> dict[str, set[str]]:
-    '''Split mixed list into deduplicated IPv4 and IPv6 sets'''
-    split_ips: dict[str, set[str]] = {'v4': set(), 'v6': set()}
-    v4_add = split_ips['v4'].add
-    v6_add = split_ips['v6'].add
-
-    for line in ip_list:
-        if '#' in line:
-            line = line.partition('#')[0]
-        parts = line.split()
-        if not parts:
-            continue
-        entry = parts[0]
-        if ':' in entry:
-            v6_add(entry)
-        elif '.' in entry:
-            v4_add(entry)
-
-    return split_ips
 
 
 def apply_nft_sets(config: Config, ip_data: dict[str, dict[str, set[str]] | Absent], reload: bool=False):
