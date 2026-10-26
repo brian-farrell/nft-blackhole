@@ -1,21 +1,25 @@
 
 # nft-blackhole
-Daemon blocking IP addresses by country or blacklist, using nftables
+##### _*Block IP addresses by country or blacklist, using nftables*_
+<br/>
+
+> [!CAUTION]
+> __This repo is undergoing a MAJOR refactoring at the moment!!!__
+> <br/>Please __*DO NOT*__ attempt to use this code in its current state (including the `main` branch)!!!
+> <br/>
+> <br/>A new release is planed for mid-November, 2026, with new improvements, including
+> <br/>the ability to install from PyPi, as well as from an RPM
+> <br/>
+> <br/>If you can't wait, I highly recommend using the code in the upstream repo, available
+> <br/>at [https://github.com/tomasz-c/nft-blackhole](https://github.com/tomasz-c/nft-blackhole)
+
 
 ## Table of contents
 
 - [Overview](#overview)
-- [Installation](#installation)
-  - [Manual](#manual)
-- [Configuration](#configuration)
-    - [Set the configuration in a file](#set-the-configuration-in-a-file)
-- [Usage](#usage)
-  - [Manual](#manual)
-  - [With systemd](#with-systemd)
-  - [Monitoring](#monitoring)
-    - [List packets counters](#list-packets-counters)
-    - [List table and sets for blackhole](#list-table-and-sets-for-blackhole)
-  - [Refresh lists](#refresh-lists)
+- [Monitoring](#monitoring)
+  - [List packets counters](#list-packets-counters)
+  - [List table and sets for blackhole](#list-table-and-sets-for-blackhole)
 - [Credits](#credits)
 - [License](#license)
 
@@ -41,47 +45,6 @@ Daemon blocking IP addresses by country or blacklist, using nftables
 - policy for countries (accept, block)
 - ports excluded from country blocks
 
-## Installation
-### Manual
-##### Requirements
-- nftables
-- python 3.8+
-- python3-jinja2
-- python3-pyyaml
-- python3-systemd
-- systemd (for daemon)
-
-##### File location
-    /usr/local/sbin/nft-blackhole.py
-    /usr/local/share/nft-blackhole/nft-blackhole.j2
-    /usr/local/etc/nft-blackhole.yaml
-    /usr/local/lib/systemd/system/nft-blackhole.service
-    /usr/local/lib/systemd/system/nft-blackhole-reload.service
-    /usr/local/lib/systemd/system/nft-blackhole-reload.timer
-
-## Configuration
-#### Set the configuration in a file
-`/usr/local/etc/nft-blackhole.yaml`
-
-## Usage
-### Manual
-##### As root:
-```shell
-/usr/local/sbin/nft-blackhole.py start
-/usr/local/sbin/nft-blackhole.py reload
-/usr/local/sbin/nft-blackhole.py restart
-/usr/local/sbin/nft-blackhole.py stop
-```
-
-### With systemd
-##### As root:
-```shell
-systemctl enable nft-blackhole.service
-systemctl start nft-blackhole.service
-systemctl reload nft-blackhole.service
-systemctl restart nft-blackhole.service
-```
-
 ### Monitoring
 #### List packets counters
 ```shell
@@ -91,26 +54,6 @@ nft list chain inet blackhole input
 #### List table and sets for blackhole
 ```shell
 nft list table inet blackhole
-```
-
-### Refresh lists
-nft-blackhole can download new versions of any blacklist it uses. You can trigger this manually, however it is better to have it automatically and periodically done (either thanks to a cron job or to a Systemd timer).
-
-#### Manual
-```shell
-/usr/local/sbin/nft-blackhole.py reload
-systemctl reload nft-blackhole.service
-```
-
-#### Crontab
-```
-0 */6 * * * systemctl reload nft-blackhole.service
-```
-
-#### Systemd Timer
-```bash
-systemctl enable --now nft-blackhole-reload.timer
-systemctl list-timers --all
 ```
 
 ## Credits
