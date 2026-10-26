@@ -9,7 +9,7 @@ authors = [
     {name = "Brian Farrell", email = "brian.farrell@me.com"}
 ]
 readme = {file = "README.md", content-type = "text/markdown"}
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 
 dependencies = [
     # Python systemd wrapper using Cython.
@@ -21,7 +21,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     # A fork of pyright with various type checking improvements, pylance features and more.
-    "basedpyright"
+    "basedpyright",
 ]
 
 doc = [
@@ -35,12 +35,12 @@ doc = [
     "mike"
 ]
 
+[project.scripts]
+nft-blackhole = "nft_blackhole.nft_blackhole:main"
+
 [project.urls]
 repository = "https://gitlab.com/brianfarrell/nft-blackhole/"
 documentation = "https://brianfarrell.gitlab.io/nft-blackhole/"
-
-[project.scripts]
-nft-blackhole = "nft_blackhole.nft_blackhole:main"
 
 [build-system]
 requires = ["setuptools", "setuptools-scm[toml]", "wheel"]
@@ -50,8 +50,6 @@ build-backend = "setuptools.build_meta"
 version_scheme = "python-simplified-semver"
 
 [tool.basedpyright]
+include = ["src"]
 exclude = ["**/reference"]
-reportAny = false
-reportExplicitAny = false
 reportImplicitStringConcatenation = false
-reportPrivateUsage = false
