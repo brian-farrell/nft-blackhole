@@ -1,5 +1,5 @@
 
-from enum import StrEnum
+from enum import EnumMeta, StrEnum
 import os
 from string import Template
 from textwrap import dedent
@@ -74,24 +74,19 @@ class Config(object):
 
 
     def __init__(self):
-        self._active_ip_versions: list[str] = list()
+        self._active_ip_versions: list[str]
         self._blacklist: AddressList | Absent
         self._block_forward: bool
         self._block_output: bool
         self._block_policy: str
         self._chain_forward: str
         self._chain_output: str
-        self._country_exclude_ports: list[str] | Absent
-        self._country_exclude_ports_rule: str
-        self._country_list: list[str] | Absent
-        self._country_list_source: str
-        self._country_policy: str
         self._default_policy: str
         self._ignore_certs: bool  # urllib
-        self._priority: int
+        self._priority: str
         self._whitelist: AddressList | Absent
 
-        _config: dict[str, Any] | Exception = Config._load_config()
+        _config: dict[str, Any] | Exception = Config._load_config()  # pyright: ignore[reportExplicitAny]
         self._configure(_config)  # pyright: ignore[reportArgumentType]
 
         self.jinja_env: Environment = Environment(
@@ -106,13 +101,14 @@ class Config(object):
         return self._active_ip_versions
 
     @active_ip_versions.setter
-    def active_ip_versions(self, value: dict[str, bool]) -> None:  # pyright: ignore[reportPropertyTypeMismatch]
-        for ip_v in self.ip_version_support:
-            v: bool = value.get(ip_v, False)
-            if v:
-                self._active_ip_versions.append(ip_v)
-        if not self._active_ip_versions:
-            raise NftbConfigError("Config file does not provide an active IP version. Exiting...")
+    def active_ip_versions(self, value: list[str]) -> None:
+        self._active_ip_versions = value
+        #for ip_v in self.ip_version_support:
+        #    v: bool = value.get(ip_v, False)
+        #    if v:
+        #        self._active_ip_versions.append(ip_v)
+        #if not self._active_ip_versions:
+        #    raise NftbConfigError("Config file does not provide an active IP version. Exiting...")
 
     @property
     def blacklist(self) -> AddressList | Absent:
@@ -243,7 +239,7 @@ class Config(object):
         return self._priority
 
     @priority.setter
-    def priority(self, value: int):
+    def priority(self, value: str):
         self._priority = value
 
     @property
@@ -259,51 +255,182 @@ class Config(object):
 
         return bool_value
 
-    def _configure(self, _config: dict[str, Any]) -> None:
-        self.active_ip_versions = _config['active_ip_versions']
+    def _configure(self, _config: dict[str, Any]) -> None:  # pyright: ignore[reportExplicitAny]
+        (_active_ip_versions := _config.get('active_ip_versions', None) or ABSENT)
+        _finalized_version_list: list[str] = list()
+
+        for v in self.ip_version_support:
+            (_version := _active_ip_versions.get(v, False) or False)  # pyright: ignore[reportUnknownMemberType]
+            if _version:
+                try:
+                    assert isinstance(_version, bool)
+                except AssertionError:
+                    raise NftbConfigError(
+                        f'IP Version {v} MUST be set to a boolean (true or false) in config! Exiting...'
+                    )
+                else:
+                    _finalized_version_list.append(v)
+
+
+        if not _finalized_version_list:
+            _active_ip_versions = ABSENT
+
+        if _active_ip_versions is ABSENT:
+            raise NftbConfigError(
+                f'At least one of {self.ip_version_support} MUST be declared as true in config! Exiting...'
+            )
+        else:
+            self.active_ip_versions = _finalized_version_list
 
         _blacklist_ips: list[str] | Absent = ABSENT
         _blacklist_files: list[str] | Absent = ABSENT
         _blacklist_urls: list[str] | Absent = ABSENT
-        _blacklist = _config.get('blacklist', ABSENT)
-
-        if _blacklist:
-            (_blacklist_ips := _blacklist.get('ips') or ABSENT)
-            (_blacklist_files := _blacklist.get('files') or ABSENT)
-            (_blacklist_urls := _blacklist.get('urls') or ABSENT)
+        _blacklist = _config.get('blacklist', ABSENT)  # pyright: ignore[reportAny]
 
         if _blacklist is ABSENT:
             self.blacklist = ABSENT
-        elif all((_blacklist_files is ABSENT, _blacklist_ips is ABSENT, _blacklist_urls is ABSENT)):
+        else:
+            (_blacklist_ips := _blacklist.get('ips', None) or ABSENT)  # pyright: ignore[reportAny]
+            (_blacklist_files := _blacklist.get('files', None) or ABSENT)  # pyright: ignore[reportAny]
+            (_blacklist_urls := _blacklist.get('urls', None) or ABSENT)  # pyright: ignore[reportAny]
+
+        if all((_blacklist_files is ABSENT, _blacklist_ips is ABSENT, _blacklist_urls is ABSENT)):
             self.blacklist = ABSENT
         else:
+            if _blacklist_ips is not ABSENT:
+                try:
+                    assert isinstance(_blacklist_ips, list) 
+                except AssertionError:
+                    raise NftbConfigError('blacklist ips MUST be a list of strings or absent from config! Exiting...')
+                try:
+                    assert all(isinstance(item, str) for item in _blacklist_ips)
+                except AssertionError:
+                    raise NftbConfigError('ALL items in blacklist ips MUST be strings! Exiting...')
+            if _blacklist_files is not ABSENT:
+                try:
+                    assert isinstance(_blacklist_files, list)
+                except AssertionError:
+                    raise NftbConfigError('blacklist files MUST be a list of strings or absent from config! Exiting...')
+                try:    
+                    assert all(isinstance(item, str) for item in _blacklist_files)
+                except AssertionError:
+                    raise NftbConfigError('ALL items in blacklist files MUST be strings! Exiting...')
+            if _blacklist_urls is not ABSENT:
+                try:
+                    assert isinstance(_blacklist_urls, list)
+                except AssertionError:
+                    raise NftbConfigError('blacklist urls MUST be a list of strings or absent from config! Exiting...')
+                try:
+                    assert all(isinstance(item, str) for item in _blacklist_urls)
+                except AssertionError:
+                    raise NftbConfigError('ALL items in blacklist urls MUST be strings! Exiting...')
             self.blacklist = AddressList(AddressListType.BLACKLIST, _blacklist_ips, _blacklist_files, _blacklist_urls)
 
-        self.block_forward = _config.get('block_forward', ABSENT)
-        self.block_output = _config.get('block_output', ABSENT)
-        self.block_policy = _config.get('block_policy', 'block')
+        (_block_forward := _config.get('block_forward', None) or False)
+        try:
+            assert isinstance(_block_forward, bool)
+        except AssertionError:
+            raise NftbConfigError('block_forward MUST be a boolean value or absent from config! Exiting...')
+        self.block_forward = _block_forward
+
+        (_block_output := _config.get('block_output', None) or False)
+        try:
+            assert isinstance(_block_output, bool)
+        except AssertionError:
+            raise NftbConfigError('block_output MUST be a boolean value or absent from config! Exiting...')
+        self.block_output = _block_output
+
+        (_block_policy := _config.get('block_forward', None) or 'drop')
+        try:
+            assert isinstance(_block_policy, str)
+        except AssertionError:
+            # TODO: Create StrEnum of acceptable values!
+            raise NftbConfigError('block_policy MUST be a string value or absent from config! Exiting...')
+        self.block_policy = _block_policy
+
+        (_priority := _config.get('priority', None) or -1)
+        try:
+            assert isinstance(_priority, str | int)
+        except AssertionError:
+            raise NftbConfigError(
+                f'a priority of {_priority} is not a valid string or integer value in config! Exiting...'
+            )
+
+        try:
+            _priority = int(_priority)
+        except ValueError:
+            _priority = _priority.lower()  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
+            if _priority in NftPriorityKeyword:
+                self.priority = NftPriorityKeyword(_priority)
+            else:
+                raise NftbConfigError(
+                    f'a priority of {_priority} is not a valid string or integer value in config! Exiting...'
+                )
+        else:
+            self.priority = str(_priority)
+
+
+
+
+
         self.country_exclude_ports = _config.get('country_exclude_ports', ABSENT)
+
         self.country_list = _config.get('country_list', ABSENT)
+
         self.country_list_source = _config.get('country_list_source', ABSENT)
+
         self.country_policy = _config.get('country_policy', 'block')
+
+
 
         if self.ignore_certs_env is not None:
             self.ignore_certs = self._get_bool(self.ignore_certs_env)
         else:
             self.ignore_certs = _config.get('ignore_certs', False)
-        self.priority = _config.get('priority', -1)
 
         _whitelist_ips: list[str] | Absent = ABSENT
         _whitelist_files: list[str] | Absent = ABSENT
         _whitelist_urls: list[str] | Absent = ABSENT
-        _whitelist = _config.get('whitelist')
+        _whitelist = _config.get('whitelist', ABSENT)  # pyright: ignore[reportAny]
 
-        if _whitelist:
-            (_whitelist_ips := _whitelist.get('ips') or ABSENT)
-            (_whitelist_files := _whitelist.get('files') or ABSENT)
-            (_whitelist_urls := _whitelist.get('urls') or ABSENT)
+        if _whitelist is ABSENT:
+            self.whitelist = ABSENT
+        else:
+            (_whitelist_ips := _whitelist.get('ips', None) or ABSENT)  # pyright: ignore[reportAny]
+            (_whitelist_files := _whitelist.get('files', None) or ABSENT)  # pyright: ignore[reportAny]
+            (_whitelist_urls := _whitelist.get('urls', None) or ABSENT)  # pyright: ignore[reportAny]
 
-        self.whitelist = AddressList(AddressListType.WHITELIST, _whitelist_ips, _whitelist_files, _whitelist_urls)
+        if all((_whitelist_files is ABSENT, _whitelist_ips is ABSENT, _whitelist_urls is ABSENT)):
+            self.whitelist = ABSENT
+        else:
+            if _whitelist_ips is not ABSENT:
+                try:
+                    assert isinstance(_whitelist_ips, list)
+                except AssertionError:
+                    raise NftbConfigError('whitelist ips MUST be a list of strings or absent from config! Exiting...')
+                try:
+                    assert all(isinstance(item, str) for item in _whitelist_ips)
+                except AssertionError:
+                    raise NftbConfigError('ALL items in whitelist ips MUST be strings! Exiting...')
+            if _whitelist_files is not ABSENT:
+                try:
+                    assert isinstance(_whitelist_files, list)
+                except AssertionError:
+                    raise NftbConfigError('whitelist files MUST be a list of strings or absent from config! Exiting...')
+                try:
+                    assert all(isinstance(item, str) for item in _whitelist_files)
+                except AssertionError:
+                    raise NftbConfigError('ALL items in whitelist files MUST be strings! Exiting...')
+            if _whitelist_urls is not ABSENT:
+                try:
+                    assert isinstance(_whitelist_urls, list)
+                except AssertionError:
+                    raise NftbConfigError('whitelist urls MUST be a list of strings or absent from config! Exiting...')
+                try:
+                    assert all(isinstance(item, str) for item in _whitelist_urls)
+                except AssertionError:
+                    raise NftbConfigError('ALL items in whitelist urls MUST be strings! Exiting...')
+            self.whitelist = AddressList(AddressListType.BLACKLIST, _whitelist_ips, _whitelist_files, _whitelist_urls)
 
         if self.block_output:
             self.chain_output = Template(self.output_template).substitute(
@@ -342,9 +469,9 @@ class Config(object):
     @override
     def __str__(self):
         config = f"""
-        blacklist_ips: {self.blacklist.ips if self.blacklist is not ABSENT else ABSENT}
-        blacklist_files: {self.blacklist.files if self.blacklist is not ABSENT else ABSENT}
-        blacklist_urls: {self.blacklist.urls if self.blacklist is not ABSENT else ABSENT}
+        blacklist_ips: {self.blacklist.ips}
+        blacklist_files: {self.blacklist.files}
+        blacklist_urls: {self.blacklist.urls}
         block_forward: {self.block_forward}
         block_policy: {self.block_policy}
         block_output: {self.block_output}
@@ -363,11 +490,36 @@ class Config(object):
         return dedent(config)
 
 
+class NftPriorityKeywordMeta(EnumMeta):
+    """
+    This class allows us to determine if a value passed from the config
+    file is one of the enumerated values in the NftPriorityKeyword enum.
+    """
+    @override
+    def __contains__(cls, item: object):
+        try:
+            _ = cls(item)
+        except ValueError:
+            return False
+        return True
+
+
+class NftPriorityKeyword(StrEnum, metaclass=NftPriorityKeywordMeta):
+    DSTNAT = 'dstnat'
+    FILTER = 'filter'
+    MANGLE = 'mangle'
+    OUT = 'out'
+    RAW = 'raw'
+    SECURITY = 'security'
+    SRCNAT = 'srcnat'
+
+
 class AddressListType(StrEnum):
     """docstring for AddressList"""
-    BLACKLIST = 'BLACKLIST'
-    WHITELIST = 'WHITELIST'
     ABSENT = ABSENT
+    BLACKLIST = 'BLACKLIST'
+    COUNTRY_LIST = "COUNTRY_LIST"
+    WHITELIST = 'WHITELIST'
         
 
 class AddressList(object):
@@ -435,6 +587,14 @@ class AddressList(object):
     def nft_set_v6(self) -> set[str]:
         return self._nft_set_v6
 
+    @property
+    def resolved_ips(self) -> list[str] | Absent:
+        return self._resolved_ips
+
+    @resolved_ips.setter
+    def resolved_ips(self, value: list[str]) -> None:
+        self._resolved_ips = value
+
     def split_ip_versions(self, ip_list: list[str]) -> None:
         '''Split mixed list into deduplicated IPv4 and IPv6 sets'''
         for line in ip_list:
@@ -443,3 +603,21 @@ class AddressList(object):
                 self.nft_set_v6.add(line)
             elif '.' in line:
                 self.nft_set_v4.add(line)
+
+
+class CountryAddressList(object):
+    """docstring for CountryAddressList"""
+    def __init__(
+        self,
+        country_exclude_ports: list[str] | Absent,
+        country_list: list[str] | Absent,
+        country_list_source: str,
+        country_policy: str
+    ):
+        self._list_type: AddressListType = AddressListType.COUNTRY_LIST
+        self._country_exclude_ports: list[str] | Absent
+        self._country_exclude_ports_rule: str
+        self._country_list: list[str] | Absent
+        self._country_list_source: str
+        self._country_policy: str
+        

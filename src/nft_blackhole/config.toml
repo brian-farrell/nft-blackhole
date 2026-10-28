@@ -10,10 +10,12 @@ block_policy = 'drop'
 block_output = false
 
 # Block forwarded connections from blacklisted ips: 'on' or 'off'.
-## Default: 'off'
+## Default: false
 block_forward = false
 
 # Chain priority in nftables: integer or standard priority name.
+# For an explantion of valid prioity names in nftables,
+# see: https://wiki.nftables.org/wiki-nftables/index.php/Netfilter_hooks#Priority_within_hook
 # Lower values have higher priority and are processed first.
 ## Default: -1
 priority = -1

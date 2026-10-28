@@ -13,27 +13,33 @@ class AbsentSentinel(str):
 	This is purposely different from `None` and does not mean that an expected value is missing.
 	It simply means that the user does not wish to provide a value, which is completely valid.
 	"""
-	instance: ClassVar[_Absent] | None = None
+	instance: ClassVar[_Absent]
 
 	class _Absent(str):
 		def __init__(self):
 			pass
 
+		def get(self, item: Any, default: Any = None) -> Any:  # pyright: ignore[reportAny, reportExplicitAny, reportUnusedParameter]
+			return None
+
+		def split_ip_versions(self, ip_list: list[str]) -> None:
+			assert list[str], ip_list
+
 		@override
 		def __str__(self) -> str:
 			return f"Absent"
 
-	def __new__(cls):
+	def __new__(cls) -> _Absent:
 		if not AbsentSentinel.instance:
 			AbsentSentinel.instance = AbsentSentinel._Absent()
 		return AbsentSentinel.instance
 
-	def __getattr__(self, attr_name: Any):
-		return getattr(self.instance, attr_name)
+	def __getattr__(self, attr_name: Any):  # pyright: ignore[reportAny, reportExplicitAny]
+		return getattr(self.instance, attr_name)  # pyright: ignore[reportAny]
 
 	@override
-	def __setattr__(self, attr_name: Any, value: Any):
-		return setattr(self.instance, attr_name, value)
+	def __setattr__(self, attr_name: Any, value: Any):  # pyright: ignore[reportAny, reportExplicitAny]
+		return setattr(self.instance, attr_name, value)  # pyright: ignore[reportAny]
 
-Absent: TypeAlias = AbsentSentinel._Absent
+Absent: TypeAlias = AbsentSentinel._Absent  # pyright: ignore[reportPrivateUsage]
 ABSENT: Absent = Absent()
