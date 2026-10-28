@@ -34,10 +34,8 @@ tests/__pycache__
 *.pdf
 *.xlsx
 
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
+# local config
+**pyrightconfig.json
 
 # Private
 env/
