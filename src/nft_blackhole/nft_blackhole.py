@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from http.client import HTTPResponse
 from importlib.metadata import version, PackageNotFoundError
 from pathlib import Path
-from re import DEBUG
 import ssl
 from string import Template
 from subprocess import run
@@ -20,6 +19,7 @@ import urllib.request
 
 from . import DEBUG_FLAG, ABSENT, Absent
 from .config import Config, AddressList
+from .debug import save_resolved_ips
 from .exceptions import NftbError
 from .logger import logger
 
@@ -31,12 +31,12 @@ def start(config: Config):
     #####ip_data: dict[str, dict[str, set[str]] | Absent] = fetch_all_lists(config)
     _ = fetch_all_lists(config)
 
-    #####if DEBUG_FLAG:
-    #####    print(f'v4 blacklist set:\n\n{config.blacklist.nft_set_v4}\n\n')
-    #####    print(f'v6 blacklist set:\n\n{config.blacklist.nft_set_v6}\n\n')
+    if DEBUG_FLAG:
+        if config.blacklist is not ABSENT:
+            save_resolved_ips(list(config.blacklist.nft_set_v4))
     
     # TODO: FIX BELOW
-    #####apply_nft_sets(config, ip_data)
+    apply_nft_sets(config)
 
     nft_template = config.jinja_env.get_template("nft-blackhole.j2")
     nft_conf = nft_template.render(
@@ -77,11 +77,11 @@ def fetch_all_lists(config: Config) -> None:
     print(f'\n\nHERE IN fetch_all_lists:\n\tWHITELIST: {config.whitelist}\n\tBLACKLIST: {config.blacklist}')
     if config.whitelist is not ABSENT:
         whitelist_ips = load_ip_sources(config.whitelist)
-        _ = config.whitelist.split_ip_versions(whitelist_ips)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
+        _ = config.whitelist.split_ip_versions(whitelist_ips)
 
     if config.blacklist is not ABSENT:
         blacklist_ips = load_ip_sources(config.blacklist)
-        _ = config.blacklist.split_ip_versions(blacklist_ips)  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
+        _ = config.blacklist.split_ip_versions(blacklist_ips)
 
     #####country_ips: dict[str, set[str]] | Absent = get_country_ips(config)
 
@@ -232,7 +232,7 @@ def parse_cmd() -> NftbArgs:
         action='store_true',
     )
 
-    args: NftbArgs = NftbArgs(**vars(parser.parse_args()))  # pyright: ignore[reportAny]
+    args: NftbArgs = NftbArgs(**vars(parser.parse_args()))
 
     return args
 
