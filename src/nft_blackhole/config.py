@@ -11,7 +11,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from . import Absent, ABSENT
 from .exceptions import NftbConfigError
 from .logger import logger
-
+from .data.countries import country_code_lookup
 
 class Config(object):
     """The Config object holds all configuration values.
@@ -22,11 +22,15 @@ class Config(object):
     'false': False, 'f': False, 'no': False, 'n': False, '0': False
     }
 
-    ignore_certs_env = os.getenv('NFT_BLACKHOLE_IGNORE_CERTS', None)  # pyright: ignore[reportUnannotatedClassAttribute]
-
-    country_exclude_ports_template: ClassVar[str] = (
-        'meta l4proto { tcp, udp } th dport { ${country_exclude_ports} } counter accept'
+    ignore_certs_env: ClassVar[str | None] = os.getenv(
+        'NFT_BLACKHOLE_IGNORE_CERTS', None
     )
+
+    nft_blackhole_config: ClassVar[str] = os.getenv(
+        'NFT_BLACKHOLE_CONFIG_PATH', '/usr/local/etc/nft-blackhole.yaml'
+    )
+
+    ip_version_support: ClassVar[list[str]] = ['v4', 'v6']
 
     forward_template: ClassVar[str] = (
         '\tchain forward {\n\t\ttype filter hook forward priority ${priority}; policy ${default_policy};\n'
@@ -41,9 +45,6 @@ class Config(object):
         '\t\tcounter\n\t}'
     ).expandtabs()
 
-    ip_version_support: ClassVar[list[str]] = ['v4', 'v6']
-    nft_blackhole_config: ClassVar[str] = os.getenv('NFT_BLACKHOLE_CONFIG_PATH', '/usr/local/etc/nft-blackhole.yaml')
-
     output_template: ClassVar[str] = (
         'chain output {\n\t\ttype filter hook output priority ${priority}; policy accept;\n'
         '\t\tip daddr @whitelist-v4 counter accept\n'
@@ -57,22 +58,6 @@ class Config(object):
         '\t\tflags interval\n\t\tauto-merge\n\t\telements = { ${ip_list} }\n\t}\n}'
     ).expandtabs()
 
-    url_templates: ClassVar[dict[str, str | dict[str, str]]] = {
-        'ebrasha': (
-            'https://raw.githubusercontent.com/ebrasha/cidr-ip-ranges-by-country/refs/heads/master/'
-            'CIDR/${country_code}-ip${ip_ver}-Hackers.Zone.txt'
-        ),
-        'ipdeny': {
-            'v4': 'https://www.ipdeny.com/ipblocks/data/aggregated/${country_code}-aggregated.zone',
-            'v6': 'https://www.ipdeny.com/ipv6/ipaddresses/aggregated/${country_code}-aggregated.zone'
-        },
-        'ipverse': (
-            'https://raw.githubusercontent.com/ipverse/geo-ip-blocks/refs/heads/master/'
-            'country/${country_code}/${country_code}-ip${ip_ver}.txt'
-        )
-    }
-
-
     def __init__(self):
         self._active_ip_versions: list[str]
         self._blacklist: AddressList | Absent
@@ -81,6 +66,7 @@ class Config(object):
         self._block_policy: str
         self._chain_forward: str
         self._chain_output: str
+        self._country_list: CountryAddressList | Absent
         self._default_policy: str
         self._ignore_certs: bool  # urllib
         self._priority: str
@@ -159,64 +145,12 @@ class Config(object):
         self._chain_output = value
 
     @property
-    def country_exclude_ports(self) -> list[str] | Absent:
-        return self._country_exclude_ports
-
-    @country_exclude_ports.setter
-    def country_exclude_ports(self, value: list[int | str] | None) -> None:  # pyright: ignore[reportPropertyTypeMismatch]
-        if value == []:
-            value = None
-        if value:
-            # Convert any int values in list to str
-            self._country_exclude_ports = ', '.join(map(str, value))  # pyright: ignore[reportAttributeAccessIssue]
-            self.country_exclude_ports_rule = Template(
-                self.country_exclude_ports_template
-            ).substitute(country_exclude_ports=self.country_exclude_ports)
-        else:
-            self._country_exclude_ports = ABSENT
-            self.country_exclude_ports_rule = ''
-
-    @property
-    def country_exclude_ports_rule(self) -> str:
-        return self._country_exclude_ports_rule
-
-    @country_exclude_ports_rule.setter
-    def country_exclude_ports_rule(self, value: str) -> None:
-        self._country_exclude_ports_rule = value
-
-    @property
-    def country_list(self) -> list[str] | Absent:
+    def country_list(self) -> CountryAddressList | Absent:
         return self._country_list
 
     @country_list.setter
-    def country_list(self, value: list[str] | Absent):
-        # Correct incorrect YAML parsing of no (Norway)
-        # It should be the string 'no', but YAML interprets it as False
-        # This is a hack due to the lack of YAML 1.2 support by PyYAML
-        # Note that the boolean value False will be conveted to the
-        # string 'False' by the Data dataclass in the config_types module.
+    def country_list(self, value: CountryAddressList | Absent):
         self._country_list = value
-
-    @property
-    def country_list_source(self) -> str | Absent:
-        return self._country_list_source
-
-    @country_list_source.setter
-    def country_list_source(self, value: str | Absent):
-        self._country_list_source = value
-
-    @property
-    def country_policy(self) -> str:
-        return self._country_policy
-
-    @country_policy.setter
-    def country_policy(self, value: str):
-        # TODO: Why does this make sense?
-        if value == 'drop':
-            self.default_policy = 'accept'
-        else:
-            self.default_policy = self.block_policy
-        self._country_policy = value
 
     @property
     def default_policy(self) -> str:
@@ -369,24 +303,93 @@ class Config(object):
         else:
             self.priority = str(_priority)
 
+        (_country_list := _config.get('country_list', None) or ABSENT)
+        _finalized_country_list: list[str] = list()
+        if _country_list is not ABSENT:
+            try:
+                assert isinstance(_country_list, list)
+            except AssertionError:
+                raise NftbConfigError(f'country_list {_country_list} is not a list! Exiting...')
+            for item in _country_list:  # pyright: ignore[reportUnknownVariableType]
+                try:
+                    assert isinstance(item, str)
+                except AssertionError:
+                    raise NftbConfigError(f'country_list item {item} is not a string! Exiting...')
+                else:
+                    _capitalized_item = item.upper()
+                    if _capitalized_item in country_code_lookup.keys():
+                        _finalized_country_list.append(_capitalized_item)
+                    else:
+                        raise NftbConfigError(
+                            f"country code '{item}' in config is not defined in ISO 3166-1! Exiting..."
+                        )
+            _country_list = _finalized_country_list
+
+        (_country_exclude_ports := _config.get('country_exclude_ports', None) or ABSENT)
+        _finalized_country_exclude_ports_list: list[str] = list()
+        if _country_exclude_ports is not ABSENT:
+            try:
+                assert isinstance(_country_exclude_ports, list)
+            except AssertionError:
+                raise NftbConfigError(
+                    f'The country_exclude_ports {_country_exclude_ports} is not a valid '
+                    f'string or integer value in config! Exiting...'
+                )
 
 
+            for item in _country_exclude_ports:  # pyright: ignore[reportUnknownVariableType]
+                try:
+                    _value = int(item)  # pyright: ignore[reportUnknownArgumentType]
+                except ValueError:
+                    _value = item.lower()  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
+                else:
+                    _finalized_country_exclude_ports_list.append(str(_value))
+            _country_exclude_ports = _finalized_country_exclude_ports_list
 
 
-        self.country_exclude_ports = _config.get('country_exclude_ports', ABSENT)
+        (_country_list_source := _config.get('country_list_source', None) or ABSENT)
+        try:
+            assert isinstance(_country_list_source, str)
+        except AssertionError:
+            raise NftbConfigError('country_list_source MUST be a string value or absent from config! Exiting...')
+        _country_list_source = _country_list_source.lower()
+        if _country_list_source in CountryListSource:
+            _country_list_source = CountryListSource(_country_list_source)
+        else:
+            raise NftbConfigError(
+                f'a country_list_source of {_country_list_source} is not one of the valid values in config! Exiting...'
+            )
 
-        self.country_list = _config.get('country_list', ABSENT)
+        (_country_policy := _config.get('country_policy', None) or 'block')
+        try:
+            assert isinstance(_country_policy, str)
+        except AssertionError:
+            # TODO: Create StrEnum of acceptable values!
+            raise NftbConfigError('country_policy MUST be a string value or absent from config! Exiting...')
+        else:
+            # TODO: Why does this make sense?
+            if _country_policy == 'drop':
+                self.default_policy = 'accept'
+            else:
+                self.default_policy = self.block_policy
 
-        self.country_list_source = _config.get('country_list_source', ABSENT)
-
-        self.country_policy = _config.get('country_policy', 'block')
-
-
+        self.country_list = CountryAddressList(
+            country_exclude_ports=_finalized_country_exclude_ports_list,
+            country_list=_country_list,
+            country_list_source=_country_list_source,
+            country_policy=_country_policy
+        )
 
         if self.ignore_certs_env is not None:
-            self.ignore_certs = self._get_bool(self.ignore_certs_env)
+            _ignore_certs = self._get_bool(self.ignore_certs_env)
         else:
-            self.ignore_certs = _config.get('ignore_certs', False)
+            (_ignore_certs := _config.get('ignore_certs', None) or False)
+            try:
+                assert isinstance(_ignore_certs, bool)
+            except AssertionError:
+                raise NftbConfigError('ignore_certs MUST be a boolean value or absent from config! Exiting...')
+
+        self.ignore_certs = _ignore_certs
 
         _whitelist_ips: list[str] | Absent = ABSENT
         _whitelist_files: list[str] | Absent = ABSENT
@@ -444,14 +447,14 @@ class Config(object):
                 priority=self.priority,
                 default_policy=self.default_policy,
                 block_policy=self.block_policy,
-                country_policy=self.country_policy,
-                country_ex_ports_rule=self.country_exclude_ports_rule
+                country_policy=self.country_list.country_policy,
+                country_ex_ports_rule=self.country_list.country_exclude_ports_rule
             )
         else:
             self.chain_forward = ''
 
     @classmethod
-    def _load_config(cls) -> dict[str, Any] | Exception:
+    def _load_config(cls) -> dict[str, Any] | Exception:  # pyright: ignore[reportExplicitAny]
         try:
             with open(cls.nft_blackhole_config, 'rb') as stream:
                 data = tomllib.load(stream)
@@ -475,10 +478,10 @@ class Config(object):
         block_forward: {self.block_forward}
         block_policy: {self.block_policy}
         block_output: {self.block_output}
-        country_list: {self.country_list}
-        country_list_source: {self.country_list_source}
-        country_policy: {self.country_policy}
-        country_exclude_ports: {self.country_exclude_ports}
+        country_exclude_ports: {self.country_list.country_exclude_ports}
+        country_list: {self.country_list.country_list}
+        country_list_source: {self.country_list.country_list_source}
+        country_policy: {self.country_list.country_policy}
         default_policy: {self.default_policy}
         ignore_certs: {self.ignore_certs}
         active_ip_versions: {self.active_ip_versions}
@@ -605,8 +608,47 @@ class AddressList(object):
                 self.nft_set_v4.add(line)
 
 
+class CountryListSourceMeta(EnumMeta):
+    """
+    This class allows us to determine if a value passed from the config
+    file is one of the enumerated values in the CountryListSource enum.
+    """
+    @override
+    def __contains__(cls, item: object):
+        try:
+            _ = cls(item)
+        except ValueError:
+            return False
+        return True
+
+
+class CountryListSource(StrEnum, metaclass=CountryListSourceMeta):
+    EBRASHA = 'ebrasha'
+    IPDENY = 'ipdeny'
+    IPVERSE = 'ipverse'
+
+
 class CountryAddressList(object):
     """docstring for CountryAddressList"""
+    country_exclude_ports_template: ClassVar[str] = (
+        'meta l4proto { tcp, udp } th dport { ${country_exclude_ports} } counter accept'
+    )
+
+    url_templates: ClassVar[dict[str, str | dict[str, str]]] = {
+        'ebrasha': (
+            'https://raw.githubusercontent.com/ebrasha/cidr-ip-ranges-by-country/refs/heads/master/'
+            'CIDR/${country_code}-ip${ip_ver}-Hackers.Zone.txt'
+        ),
+        'ipdeny': {
+            'v4': 'https://www.ipdeny.com/ipblocks/data/aggregated/${country_code}-aggregated.zone',
+            'v6': 'https://www.ipdeny.com/ipv6/ipaddresses/aggregated/${country_code}-aggregated.zone'
+        },
+        'ipverse': (
+            'https://raw.githubusercontent.com/ipverse/geo-ip-blocks/refs/heads/master/'
+            'country/${country_code}/${country_code}-ip${ip_ver}.txt'
+        )
+    }
+
     def __init__(
         self,
         country_exclude_ports: list[str] | Absent,
@@ -615,9 +657,65 @@ class CountryAddressList(object):
         country_policy: str
     ):
         self._list_type: AddressListType = AddressListType.COUNTRY_LIST
-        self._country_exclude_ports: list[str] | Absent
+        self._country_exclude_ports: list[str] | Absent = country_exclude_ports
         self._country_exclude_ports_rule: str
-        self._country_list: list[str] | Absent
-        self._country_list_source: str
-        self._country_policy: str
-        
+        self._country_list: list[str] | Absent = country_list
+        self._country_list_source: str = country_list_source
+        self._country_policy: str = country_policy
+
+    @property
+    def country_exclude_ports(self) -> list[str] | Absent:
+        return self._country_exclude_ports
+
+    @country_exclude_ports.setter
+    def country_exclude_ports(self, value: list[str] | Absent) -> None:
+        if value is not ABSENT:
+            self.country_exclude_ports_rule = Template(
+                self.country_exclude_ports_template
+            ).substitute(country_exclude_ports=value)
+        else:
+            self._country_exclude_ports = ABSENT
+            self.country_exclude_ports_rule = ''
+
+    @property
+    def country_exclude_ports_rule(self) -> str:
+        return self._country_exclude_ports_rule
+
+    @country_exclude_ports_rule.setter
+    def country_exclude_ports_rule(self, value: str) -> None:
+        self._country_exclude_ports_rule = value
+
+    @property
+    def country_list(self) -> list[str] | Absent:
+        return self._country_list
+
+    @country_list.setter
+    def country_list(self, value: list[str] | Absent):
+        self._country_list = value
+
+    @property
+    def country_list_source(self) -> str | Absent:
+        return self._country_list_source
+
+    @country_list_source.setter
+    def country_list_source(self, value: str | Absent):
+        self._country_list_source = value
+
+    @property
+    def country_policy(self) -> str:
+        return self._country_policy
+
+    @country_policy.setter
+    def country_policy(self, value: str):
+        self._country_policy = value
+
+    @override
+    def __str__(self):
+        str_rep = """
+        country_list: {self.country_list}
+        country_list_source: {self.country_list_source}
+        country_policy: {self.country_policy}
+        country_exclude_ports: {self.country_exclude_ports}
+        """
+
+        return str_rep

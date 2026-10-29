@@ -13,6 +13,7 @@ class AbsentSentinel(str):
 	This is purposely different from `None` and does not mean that an expected value is missing.
 	It simply means that the user does not wish to provide a value, which is completely valid.
 	"""
+	# TODO: Figure out what needs to be here and what should be in type stub
 	instance: ClassVar[_Absent]
 
 	class _Absent(str):
