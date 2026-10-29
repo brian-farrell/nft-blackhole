@@ -53,3 +53,5 @@ version_scheme = "python-simplified-semver"
 include = ["src"]
 exclude = ["**/reference"]
 reportImplicitStringConcatenation = false
+venvPath = "."
+venv = ".venv"
