@@ -35,12 +35,12 @@ country_list_source = 'ipverse'
 
 # Country list: two letter country codes defined in ISO 3166-1
 # https://en.wikipedia.org/wiki/ISO_3166-1_alpha-2#Officially_assigned_code_elements
-country_list = ['fi']
+country_list = ['fi', 'cn']
 
 # Country exclude ports: port numbers or names, e.g: [993, https]
 # List is available in /etc/services
 # These ports will be accessible on TCP and UDP protocols from all countries (but not from blacklisted IPs)
-country_exclude_ports = []
+country_exclude_ports = [993, 'https', 8080]
 
 # urllib config
 #

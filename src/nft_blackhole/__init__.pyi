@@ -1,22 +1,31 @@
 
+from enum import StrEnum
 import os
 from typing import Any, ClassVar, TypeAlias, override
 
-from .config import CountryAddressList
+from .config import AddressList, AddressListType, CountryAddressList, CountryListSource
 
 DEBUG_FLAG: bool = bool(os.getenv('NFT_BLACKHOLE_DEBUG', False))
 
 class AbsentSentinel(str):
 	instance: ClassVar[_Absent]
 	class _Absent(str):
+		nft_set_template: str
+		url_templates: ClassVar[dict[str, str | dict[str, str]]]
 		def __init__(self) -> None:
-			self.ips: list[str]
-			self.files: list[str]
-			self.urls: list[str]
+			self.active_address_lists: list[AddressList | CountryAddressList | Absent]
+			self.active_ip_versions: list[str]
 			self.country_exclude_ports: list[str]
-			self.country_list: CountryAddressList
-			self.country_list_source: str
+			self.country_exclude_ports_rule: str
+			self.country_address_list: CountryAddressList
+			self.country_list: list[str]
+			self.country_list_source: CountryListSource
 			self.country_policy: str
+			self.files: list[str]
+			self.ips: list[str]
+			self.list_type: AddressListType
+			self.nft_sets: dict[str, list[str]]
+			self.urls: list[str]
 
 		def get(self, item, default=None) -> None:
 			pass

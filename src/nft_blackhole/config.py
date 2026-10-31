@@ -59,6 +59,7 @@ class Config(object):
     ).expandtabs()
 
     def __init__(self):
+        self._active_address_lists: list[AddressList | CountryAddressList | Absent] = list()
         self._active_ip_versions: list[str]
         self._blacklist: AddressList | Absent
         self._block_forward: bool
@@ -66,7 +67,7 @@ class Config(object):
         self._block_policy: str
         self._chain_forward: str
         self._chain_output: str
-        self._country_list: CountryAddressList | Absent
+        self._country_address_list: CountryAddressList | Absent
         self._default_policy: str
         self._ignore_certs: bool  # urllib
         self._priority: str
@@ -83,18 +84,20 @@ class Config(object):
         )
 
     @property
+    def active_address_lists(self) -> list[AddressList | CountryAddressList | Absent]:
+        return self._active_address_lists
+
+    @active_address_lists.setter
+    def active_address_lists(self, value: list[AddressList | CountryAddressList | Absent]) -> None:
+        self._active_address_lists = value
+
+    @property
     def active_ip_versions(self) -> list[str]:
         return self._active_ip_versions
 
     @active_ip_versions.setter
     def active_ip_versions(self, value: list[str]) -> None:
         self._active_ip_versions = value
-        #for ip_v in self.ip_version_support:
-        #    v: bool = value.get(ip_v, False)
-        #    if v:
-        #        self._active_ip_versions.append(ip_v)
-        #if not self._active_ip_versions:
-        #    raise NftbConfigError("Config file does not provide an active IP version. Exiting...")
 
     @property
     def blacklist(self) -> AddressList | Absent:
@@ -145,12 +148,12 @@ class Config(object):
         self._chain_output = value
 
     @property
-    def country_list(self) -> CountryAddressList | Absent:
-        return self._country_list
+    def country_address_list(self) -> CountryAddressList | Absent:
+        return self._country_address_list
 
-    @country_list.setter
-    def country_list(self, value: CountryAddressList | Absent):
-        self._country_list = value
+    @country_address_list.setter
+    def country_address_list(self, value: CountryAddressList | Absent):
+        self._country_address_list = value
 
     @property
     def default_policy(self) -> str:
@@ -219,7 +222,7 @@ class Config(object):
         _blacklist_ips: list[str] | Absent = ABSENT
         _blacklist_files: list[str] | Absent = ABSENT
         _blacklist_urls: list[str] | Absent = ABSENT
-        _blacklist = _config.get('blacklist', ABSENT)  # pyright: ignore[reportAny]
+        _blacklist = _config.get('blacklist', ABSENT)  # pyright: ignore[reportAny]        
 
         if _blacklist is ABSENT:
             self.blacklist = ABSENT
@@ -259,6 +262,7 @@ class Config(object):
                 except AssertionError:
                     raise NftbConfigError('ALL items in blacklist urls MUST be strings! Exiting...')
             self.blacklist = AddressList(AddressListType.BLACKLIST, _blacklist_ips, _blacklist_files, _blacklist_urls)
+            self.active_address_lists.append(self.blacklist)
 
         (_block_forward := _config.get('block_forward', None) or False)
         try:
@@ -342,8 +346,7 @@ class Config(object):
                     _value = int(item)  # pyright: ignore[reportUnknownArgumentType]
                 except ValueError:
                     _value = item.lower()  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
-                else:
-                    _finalized_country_exclude_ports_list.append(str(_value))
+                _finalized_country_exclude_ports_list.append(str(_value))  # pyright: ignore[reportUnknownArgumentType]
             _country_exclude_ports = _finalized_country_exclude_ports_list
 
 
@@ -373,12 +376,13 @@ class Config(object):
             else:
                 self.default_policy = self.block_policy
 
-        self.country_list = CountryAddressList(
+        self.country_address_list = CountryAddressList(
             country_exclude_ports=_finalized_country_exclude_ports_list,
             country_list=_country_list,
             country_list_source=_country_list_source,
             country_policy=_country_policy
         )
+        self.active_address_lists.append(self.country_address_list)
 
         if self.ignore_certs_env is not None:
             _ignore_certs = self._get_bool(self.ignore_certs_env)
@@ -434,6 +438,7 @@ class Config(object):
                 except AssertionError:
                     raise NftbConfigError('ALL items in whitelist urls MUST be strings! Exiting...')
             self.whitelist = AddressList(AddressListType.BLACKLIST, _whitelist_ips, _whitelist_files, _whitelist_urls)
+            self.active_address_lists.append(self.whitelist)
 
         if self.block_output:
             self.chain_output = Template(self.output_template).substitute(
@@ -447,8 +452,8 @@ class Config(object):
                 priority=self.priority,
                 default_policy=self.default_policy,
                 block_policy=self.block_policy,
-                country_policy=self.country_list.country_policy,
-                country_ex_ports_rule=self.country_list.country_exclude_ports_rule
+                country_policy=self.country_address_list.country_policy,
+                country_ex_ports_rule=self.country_address_list.country_exclude_ports_rule
             )
         else:
             self.chain_forward = ''
@@ -478,10 +483,10 @@ class Config(object):
         block_forward: {self.block_forward}
         block_policy: {self.block_policy}
         block_output: {self.block_output}
-        country_exclude_ports: {self.country_list.country_exclude_ports}
-        country_list: {self.country_list.country_list}
-        country_list_source: {self.country_list.country_list_source}
-        country_policy: {self.country_list.country_policy}
+        country_exclude_ports: {self.country_address_list.country_exclude_ports}
+        country_list: {self.country_address_list.country_list}
+        country_list_source: {self.country_address_list.country_list_source}
+        country_policy: {self.country_address_list.country_policy}
         default_policy: {self.default_policy}
         ignore_certs: {self.ignore_certs}
         active_ip_versions: {self.active_ip_versions}
@@ -517,29 +522,14 @@ class NftPriorityKeyword(StrEnum, metaclass=NftPriorityKeywordMeta):
     SRCNAT = 'srcnat'
 
 
-class AddressListType(StrEnum):
-    """docstring for AddressList"""
-    ABSENT = ABSENT
-    BLACKLIST = 'BLACKLIST'
-    COUNTRY_LIST = "COUNTRY_LIST"
-    WHITELIST = 'WHITELIST'
-        
-
-class AddressList(object):
-    """docstring for IPVersion"""
+class AddressListBase(object):
+    """docstring for AddressListBase"""
     def __init__(
         self,
         list_type: AddressListType,
-        ips: list[str] | Absent = ABSENT,
-        files: list[str] | Absent = ABSENT,
-        urls: list[str] | Absent = ABSENT
     ):
         self._list_type: AddressListType = list_type
-        self._ips: list[str] | Absent = ips
-        self._files: list[str] | Absent = files
-        self._urls: list[str] | Absent = urls
-        self._nft_set_v4: set[str] = set()
-        self._nft_set_v6: set[str] = set()
+        self._nft_sets: dict[str, set[str]] = dict()
         self._resolved_ips: list[str] = list()
 
     @property
@@ -549,6 +539,58 @@ class AddressList(object):
     @list_type.setter
     def list_type(self, value: AddressListType) -> None:
         self._list_type = value
+
+    @property
+    def nft_sets(self):
+        return self._nft_sets
+
+    @property
+    def resolved_ips(self) -> list[str] | Absent:
+        return self._resolved_ips
+
+    @resolved_ips.setter
+    def resolved_ips(self, value: list[str]) -> None:
+        self._resolved_ips = value
+
+    def split_ip_versions(self, ip_list: list[str]) -> None:
+        '''Split mixed list into deduplicated IPv4 and IPv6 sets'''
+        _v6_set = self.nft_sets.get('v6', set())
+        _v4_set = self.nft_sets.get('v4', set())
+
+        for line in ip_list:
+            line = line.partition('#')[0].strip()  # Watch for comments to right of ips from config
+            if ':' in line:
+                _v6_set.add(line)
+            elif '.' in line:
+                _v4_set.add(line)
+
+        if _v6_set:
+            self.nft_sets['v6'] = _v6_set
+        if _v4_set:
+            self.nft_sets['v4'] = _v4_set
+
+
+class AddressListType(StrEnum):
+    """docstring for AddressList"""
+    ABSENT = ABSENT
+    BLACKLIST = 'BLACKLIST'
+    COUNTRY_LIST = "COUNTRY_LIST"
+    WHITELIST = 'WHITELIST'
+
+
+class AddressList(AddressListBase):
+    """docstring for IPVersion"""
+    def __init__(
+        self,
+        list_type: AddressListType,
+        ips: list[str] | Absent = ABSENT,
+        files: list[str] | Absent = ABSENT,
+        urls: list[str] | Absent = ABSENT
+    ):
+        super(AddressList, self).__init__(list_type=list_type)
+        self._ips: list[str] | Absent = ips
+        self._files: list[str] | Absent = files
+        self._urls: list[str] | Absent = urls
 
     @property
     def ips(self) -> list[str] | Absent:
@@ -571,6 +613,7 @@ class AddressList(object):
             self._files = value
         else:
             self._files = ABSENT
+
     @property
     def urls(self) -> list[str] | Absent:
         return self._urls
@@ -581,31 +624,6 @@ class AddressList(object):
             self._urls = value
         else:
             self._urls = ABSENT
-
-    @property
-    def nft_set_v4(self) -> set[str]:
-        return self._nft_set_v4
-
-    @property
-    def nft_set_v6(self) -> set[str]:
-        return self._nft_set_v6
-
-    @property
-    def resolved_ips(self) -> list[str] | Absent:
-        return self._resolved_ips
-
-    @resolved_ips.setter
-    def resolved_ips(self, value: list[str]) -> None:
-        self._resolved_ips = value
-
-    def split_ip_versions(self, ip_list: list[str]) -> None:
-        '''Split mixed list into deduplicated IPv4 and IPv6 sets'''
-        for line in ip_list:
-            line = line.partition('#')[0].strip()  # Watch for comments to right of ips from config
-            if ':' in line:
-                self.nft_set_v6.add(line)
-            elif '.' in line:
-                self.nft_set_v4.add(line)
 
 
 class CountryListSourceMeta(EnumMeta):
@@ -623,12 +641,13 @@ class CountryListSourceMeta(EnumMeta):
 
 
 class CountryListSource(StrEnum, metaclass=CountryListSourceMeta):
+    ABSENT = ABSENT
     EBRASHA = 'ebrasha'
     IPDENY = 'ipdeny'
     IPVERSE = 'ipverse'
 
 
-class CountryAddressList(object):
+class CountryAddressList(AddressListBase):
     """docstring for CountryAddressList"""
     country_exclude_ports_template: ClassVar[str] = (
         'meta l4proto { tcp, udp } th dport { ${country_exclude_ports} } counter accept'
@@ -653,15 +672,24 @@ class CountryAddressList(object):
         self,
         country_exclude_ports: list[str] | Absent,
         country_list: list[str] | Absent,
-        country_list_source: str,
+        country_list_source: CountryListSource,
         country_policy: str
     ):
-        self._list_type: AddressListType = AddressListType.COUNTRY_LIST
+        super(CountryAddressList, self).__init__(list_type=AddressListType.COUNTRY_LIST)
         self._country_exclude_ports: list[str] | Absent = country_exclude_ports
         self._country_exclude_ports_rule: str
         self._country_list: list[str] | Absent = country_list
-        self._country_list_source: str = country_list_source
+        self._country_list_source: CountryListSource | Absent = country_list_source
         self._country_policy: str = country_policy
+
+        if self._country_exclude_ports is not ABSENT:
+            self._country_exclude_ports_rule = Template(
+                self.country_exclude_ports_template
+            ).substitute(
+                country_exclude_ports=self._country_exclude_ports
+            )
+        else:
+            self._country_exclude_ports_rule = ''
 
     @property
     def country_exclude_ports(self) -> list[str] | Absent:
@@ -694,11 +722,11 @@ class CountryAddressList(object):
         self._country_list = value
 
     @property
-    def country_list_source(self) -> str | Absent:
+    def country_list_source(self) -> CountryListSource | Absent:
         return self._country_list_source
 
     @country_list_source.setter
-    def country_list_source(self, value: str | Absent):
+    def country_list_source(self, value: CountryListSource | Absent):
         self._country_list_source = value
 
     @property

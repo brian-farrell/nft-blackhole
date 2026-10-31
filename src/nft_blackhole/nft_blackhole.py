@@ -6,6 +6,7 @@ whitelist/blacklist IP addresses in nftables
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from datetime import datetime
 from http.client import HTTPResponse
 from importlib.metadata import version, PackageNotFoundError
 from pathlib import Path
@@ -19,10 +20,14 @@ import urllib.request
 
 from . import DEBUG_FLAG, ABSENT, Absent
 from .config import Config, AddressList
-from .debug import save_resolved_ips
 from .exceptions import NftbError
 from .logger import logger
 
+if DEBUG_FLAG:
+    from .debug import save_resolved_ips
+
+
+# TODO: Add copius logging here and in config module
 
 def start(config: Config):
     """Starting nft-blackhole"""
@@ -33,7 +38,8 @@ def start(config: Config):
 
     if DEBUG_FLAG:
         if config.blacklist is not ABSENT:
-            save_resolved_ips(list(config.blacklist.nft_set_v4))
+            logger.debug('Saving blacklist')
+            save_resolved_ips(config)  # pyright: ignore[reportPossiblyUnboundVariable]
     
     # TODO: FIX BELOW
     apply_nft_sets(config)
@@ -43,8 +49,8 @@ def start(config: Config):
         priority=config.priority,
         default_policy=config.default_policy,
         block_policy=config.block_policy,
-        country_exclude_ports_rule=config.country_exclude_ports_rule,
-        country_policy=config.country_policy,
+        country_exclude_ports_rule=config.country_address_list.country_exclude_ports_rule,
+        country_policy=config.country_address_list.country_policy,
         chain_output=config.chain_output,
         chain_forward=config.chain_forward
     )
@@ -76,14 +82,16 @@ def fetch_all_lists(config: Config) -> None:
     '''Fetch all whitelist, blacklist and country lists with validation'''
     print(f'\n\nHERE IN fetch_all_lists:\n\tWHITELIST: {config.whitelist}\n\tBLACKLIST: {config.blacklist}')
     if config.whitelist is not ABSENT:
-        whitelist_ips = load_ip_sources(config.whitelist)
-        _ = config.whitelist.split_ip_versions(whitelist_ips)
+        _whitelist_ips = load_ip_sources(config.whitelist)
+        _ = config.whitelist.split_ip_versions(_whitelist_ips)
 
     if config.blacklist is not ABSENT:
-        blacklist_ips = load_ip_sources(config.blacklist)
-        _ = config.blacklist.split_ip_versions(blacklist_ips)
+        _blacklist_ips = load_ip_sources(config.blacklist)
+        _ = config.blacklist.split_ip_versions(_blacklist_ips)
 
-    #####country_ips: dict[str, set[str]] | Absent = get_country_ips(config)
+    if config.country_address_list is not ABSENT:
+        _country_list_ips = get_country_ips(config)
+        _ = config.country_address_list.split_ip_versions(_country_list_ips)
 
 
 def load_ip_sources(address_list: AddressList | Absent) -> list[str]:
@@ -92,11 +100,11 @@ def load_ip_sources(address_list: AddressList | Absent) -> list[str]:
     resolved_ips: list[str] = list()
 
     # Files
-    if address_list.files is not ABSENT:  # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
-        for path in address_list.files:  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
-            if path.startswith('#'):  # pyright: ignore[reportUnknownMemberType]
+    if address_list.files is not ABSENT:
+        for path in address_list.files:
+            if path.startswith('#'):
                 continue
-            file_path = Path(path).resolve()  # pyright: ignore[reportUnknownArgumentType]
+            file_path = Path(path).resolve()
             try:
                 with open(file_path, 'r') as f:
                     resolved_ips.extend(f.readlines())
@@ -105,15 +113,15 @@ def load_ip_sources(address_list: AddressList | Absent) -> list[str]:
                 continue
         
     # URLs
-    if address_list.urls is not ABSENT:  # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
+    if address_list.urls is not ABSENT:
         clean_urls: list[str] = list()
         url: str
-        for url in address_list.urls:  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
-            if url.startswith('#'):  # pyright: ignore[reportUnknownMemberType]
+        for url in address_list.urls:
+            if url.startswith('#'):
                 continue
             else:
-                url = url.strip()  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
-                clean_urls.append(url)  # pyright: ignore[reportUnknownArgumentType]
+                url = url.strip()
+                clean_urls.append(url)
         if clean_urls:
             downloaded = get_urls(clean_urls)
             resolved_ips.extend(downloaded)
@@ -121,38 +129,34 @@ def load_ip_sources(address_list: AddressList | Absent) -> list[str]:
     return resolved_ips
 
 
-def get_country_ips(config: Config) -> dict[str, set[str]] | Absent:
+def get_country_ips(config: Config) -> list[str]:
     '''Fetch country IP lists based on configured source and return dict per IP version'''
-    if not config.country_list:
-        # return {'v4': set(), 'v6': set()}
-        return ABSENT
 
     urls: list[str] = []
     url_string: str
-    url_templates: dict[str, str | dict[str, str]] = config.url_templates
+    url_templates: dict[str, str | dict[str, str]] = config.country_address_list.url_templates
     print(f'\n\nCOUNTRY LIST TEMPLATES:\n{url_templates}')
+    _country_list = config.country_address_list.country_list
     for ip_ver in config.ip_version_support:
-        for country in config.country_list:
-            if config.country_list_source == 'ebrasha':
+        for country in _country_list:
+            if config.country_address_list.country_list_source == 'ebrasha':
                 country_code = country.upper()
-                url_string = url_templates[config.country_list_source]  # pyright: ignore[reportAssignmentType]
-            elif config.country_list_source == 'ipdeny':
+                url_string = url_templates[config.country_address_list.country_list_source]
+            elif config.country_address_list.country_list_source == 'ipdeny':
                 country_code = country.lower()
-                url_string = url_templates[config.country_list_source][ip_ver]  # pyright: ignore[reportArgumentType]
-            elif config.country_list_source == 'ipverse':
+                url_string = url_templates[config.country_address_list.country_list_source][ip_ver]  # pyright: ignore[reportArgumentType]
+            elif config.country_address_list.country_list_source == 'ipverse':
                 country_code = country.lower()
-                url_string = url_templates[config.country_list_source]  # pyright: ignore[reportAssignmentType]
+                url_string = url_templates[config.country_address_list.country_list_source]  # pyright: ignore[reportAssignmentType]
             else:
                 raise
             url: str = Template(url_string).substitute(country_code=country_code, ip_ver=ip_ver)
             urls.append(url)
+            print(f'\n\nURLs:\n{urls}\n\n')
 
     raw_ips = get_urls(urls)
 
-    if not raw_ips:
-        return None
-
-    return split_ip_versions(raw_ips)
+    return raw_ips
 
 
 def get_urls(urls: list[str], max_retries: int=3, retry_delay: int=5, timeout: int=10) -> list[str]:
@@ -187,16 +191,17 @@ def get_urls(urls: list[str], max_retries: int=3, retry_delay: int=5, timeout: i
     return ip_list_aggregated
 
 
-def apply_nft_sets(config: Config, ip_data: dict[str, dict[str, set[str]] | Absent], reload: bool=False):
+def apply_nft_sets(config: Config | Absent, reload: bool=False):
     '''Create all nftables sets (whitelist, blacklist, country)'''
-    print(f"\n\n!!!!! ip_data:\n\n{ip_data}\n\n")
-    for set_type in ('whitelist', 'blacklist', 'country'):
-        for ip_ver in config.ip_version_support:
-            set_name = f'{set_type}-{ip_ver}'
-            ip_list = ip_data[set_type][ip_ver]
+    for address_list in config.active_address_lists:
+        for ip_version in config.active_ip_versions:
+            set_name = f'{address_list.list_type}-{ip_version}'
+            ip_list = address_list.nft_sets[ip_version]
             set_list = ', '.join(ip_list)
             nft_set = (
-                Template(config.nft_set_template).substitute(ip_ver=f'ip{ip_ver}', set_name=set_name, ip_list=set_list)
+                Template(config.nft_set_template).substitute(
+                    ip_ver=f'ip{ip_version}', set_name=set_name, ip_list=set_list
+                )
             )
             if not DEBUG_FLAG:
                 if reload:
@@ -206,6 +211,17 @@ def apply_nft_sets(config: Config, ip_data: dict[str, dict[str, set[str]] | Abse
             else:
                 logger.info(f'apply_nft_sets: was going to run nft command, but DEBUG_FLAG is {DEBUG_FLAG}')
 
+                dt = datetime.now()
+                mod_path = Path(__file__).resolve()
+
+                file_path = Path(
+                    f"{mod_path}/../../debug/{dt.strftime('%Y-%m-%d_%H%M%S')}_{address_list.list_type}_nft_set_{ip_version}.text"
+                ).resolve()
+
+                with open(file_path, 'w') as file_handle:
+                    _ = file_handle.write(f'{nft_set}\n')
+
+
 
 @dataclass
 class NftbArgs:
@@ -213,7 +229,9 @@ class NftbArgs:
     We use this dataclass to allow us to type hint command line args
     """
     cmd: str
+    dry_run: bool
     ignore_certs: bool
+    ignore_warnings: bool
 
 
 def parse_cmd() -> NftbArgs:
@@ -223,12 +241,27 @@ def parse_cmd() -> NftbArgs:
     _ = parser.add_argument(
         'cmd',
         choices=('start', 'stop', 'restart', 'reload', 'config'),
-        help='Action to nft-blackhole',
+        help='Action to perform with nft-blackhole',
         action='store',
+    )
+
+    # TODO: Wire this up!
+    _ = parser.add_argument(
+        '--dry-run',
+        help='Run command and show what would be done without actually doing it',
+        action='store_true'
     )
 
     _ = parser.add_argument(
         '--ignore-certs',
+        help='Ignore bad/missing SSL certificates when downloading lists',
+        action='store_true',
+    )
+
+    # TODO: Wire this up!
+    _ = parser.add_argument(
+        '--ignore-warnings',
+        help='Ignore warnings about configuration issues',
         action='store_true',
     )
 
