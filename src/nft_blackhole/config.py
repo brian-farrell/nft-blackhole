@@ -1,14 +1,21 @@
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from enum import EnumMeta, StrEnum
+from http.client import HTTPResponse
 import os
+from pathlib import Path
 from string import Template
 from textwrap import dedent
 import tomllib
+import time
 from typing import Any, ClassVar, override
+import urllib
+from urllib.error import HTTPError
+import urllib.request
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from . import Absent, ABSENT
+from . import DEBUG_FLAG, Absent, ABSENT
 from .exceptions import NftbConfigError
 from .logger import logger
 from .data.countries import country_code_lookup
@@ -17,6 +24,8 @@ class Config(object):
     """The Config object holds all configuration values.
     The user is able to customize settings in /usr/local/etc/nft-blackhole.yaml.
     """
+    _active_address_lists: list[AddressList | CountryAddressList | Absent] = list()
+
     bool_map: ClassVar[dict[str, bool]] = {
     'true': True, 't': True, 'yes': True, 'y': True, '1': True,
     'false': False, 'f': False, 'no': False, 'n': False, '0': False
@@ -59,7 +68,6 @@ class Config(object):
     ).expandtabs()
 
     def __init__(self):
-        self._active_address_lists: list[AddressList | CountryAddressList | Absent] = list()
         self._active_ip_versions: list[str]
         self._blacklist: AddressList | Absent
         self._block_forward: bool
@@ -84,8 +92,8 @@ class Config(object):
         )
 
     @property
-    def active_address_lists(self) -> list[AddressList | CountryAddressList | Absent]:
-        return self._active_address_lists
+    def active_address_lists(cls) -> list[AddressList | CountryAddressList | Absent]:
+        return cls._active_address_lists
 
     @active_address_lists.setter
     def active_address_lists(self, value: list[AddressList | CountryAddressList | Absent]) -> None:
@@ -380,7 +388,8 @@ class Config(object):
             country_exclude_ports=_finalized_country_exclude_ports_list,
             country_list=_country_list,
             country_list_source=_country_list_source,
-            country_policy=_country_policy
+            country_policy=_country_policy,
+            active_ip_versions=self.active_ip_versions
         )
         self.active_address_lists.append(self.country_address_list)
 
@@ -437,7 +446,7 @@ class Config(object):
                     assert all(isinstance(item, str) for item in _whitelist_urls)
                 except AssertionError:
                     raise NftbConfigError('ALL items in whitelist urls MUST be strings! Exiting...')
-            self.whitelist = AddressList(AddressListType.BLACKLIST, _whitelist_ips, _whitelist_files, _whitelist_urls)
+            self.whitelist = AddressList(AddressListType.WHITELIST, _whitelist_ips, _whitelist_files, _whitelist_urls)
             self.active_address_lists.append(self.whitelist)
 
         if self.block_output:
@@ -470,30 +479,23 @@ class Config(object):
             msg = f"Error parsing TOML file: {cls.nft_blackhole_config}. Exiting..."
             raise NftbConfigError(msg)
         else:
-            logger.info(f"Config loaded from {cls.nft_blackhole_config}")
+            _ = logger.info(f"Config loaded from {cls.nft_blackhole_config}")  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
             return data
 
 
     @override
     def __str__(self):
         config = f"""
-        blacklist_ips: {self.blacklist.ips}
-        blacklist_files: {self.blacklist.files}
-        blacklist_urls: {self.blacklist.urls}
+        {str(self.blacklist)}
         block_forward: {self.block_forward}
         block_policy: {self.block_policy}
         block_output: {self.block_output}
-        country_exclude_ports: {self.country_address_list.country_exclude_ports}
-        country_list: {self.country_address_list.country_list}
-        country_list_source: {self.country_address_list.country_list_source}
-        country_policy: {self.country_address_list.country_policy}
+        {str(self.country_address_list)}
         default_policy: {self.default_policy}
         ignore_certs: {self.ignore_certs}
         active_ip_versions: {self.active_ip_versions}
         priority: {self.priority}
-        whitelist_ips: {self.whitelist.ips if self.whitelist is not ABSENT else ABSENT}
-        whitelist_files: {self.whitelist.files if self.whitelist is not ABSENT else ABSENT}
-        whitelist_urls: {self.whitelist.urls if self.whitelist is not ABSENT else ABSENT}
+        {str(self.whitelist)}
         """
         return dedent(config)
 
@@ -527,10 +529,12 @@ class AddressListBase(object):
     def __init__(
         self,
         list_type: AddressListType,
+        urls: list[str] | Absent = ABSENT
     ):
         self._list_type: AddressListType = list_type
         self._nft_sets: dict[str, set[str]] = dict()
         self._resolved_ips: list[str] = list()
+        self._urls: list[str] | Absent = urls
 
     @property
     def list_type(self) -> StrEnum:
@@ -545,19 +549,85 @@ class AddressListBase(object):
         return self._nft_sets
 
     @property
-    def resolved_ips(self) -> list[str] | Absent:
+    def resolved_ips(self) -> list[str]:
         return self._resolved_ips
 
     @resolved_ips.setter
     def resolved_ips(self, value: list[str]) -> None:
         self._resolved_ips = value
 
-    def split_ip_versions(self, ip_list: list[str]) -> None:
+    @property
+    def urls(self) -> list[str] | Absent:
+        """
+        Returns a clean list of urls
+        """
+        return self._urls
+
+    @urls.setter
+    def urls(self, value: list[str] | Absent, reset: bool = False) -> None:
+        if value:
+            if value is not ABSENT:
+                if len(self.urls) > 0 and not reset:
+                    pass
+                else:
+                    self._urls = list()
+
+                for url in value:
+                    if url.startswith('#'):
+                        continue
+                    else:
+                        url = url.strip()
+                        self._urls.append(url)
+            else:
+                self._urls = value
+
+    def get_urls(self, max_retries: int=3, retry_delay: int=5, timeout: int=10) -> int | None:
+        '''Download url in threads with retry logic'''
+        def get_url(url: str) -> list[str] | None:
+            for attempt in range(max_retries):
+                try:
+                    response: HTTPResponse = urllib.request.urlopen(url, timeout=timeout)  # pyright: ignore[reportAny]
+                except HTTPError as exc:
+                    if exc.code == 408 and attempt < max_retries - 1:
+                        _ = logger.warning(  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
+                            f'Failed to fetch {url} on attempt {attempt+1}/{max_retries}. '
+                            f'Retrying in {retry_delay}s. Error: {exc}'
+                        )
+                        time.sleep(retry_delay)
+                        continue
+                    else:
+                        return None
+                else:
+                    content: str = response.read().decode('utf-8')
+                    return content.splitlines()
+
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            do_urls = [executor.submit(get_url, url) for url in self.urls]
+            count = 0
+            for out in as_completed(do_urls):
+                ip_list = out.result()
+                if ip_list is None or ABSENT:
+                    pass
+                else:
+                    count += len(ip_list)
+                    _ = self.resolved_ips.extend(ip_list)
+            return count            
+
+
+    def split_ip_versions(self) -> None:
         '''Split mixed list into deduplicated IPv4 and IPv6 sets'''
         _v6_set = self.nft_sets.get('v6', set())
         _v4_set = self.nft_sets.get('v4', set())
+        if DEBUG_FLAG:
+            _debug_list = list(_v6_set)
+            _ = logger.debug(f'_v6_set[:5] = {_debug_list[:5] if _debug_list else 'empty'}')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
+            _ = logger.debug(f'_v6_set contains {len(_debug_list)} IPs')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
 
-        for line in ip_list:
+            _debug_list = list(_v4_set)
+            _ = logger.debug(f'_v4_set[:5] = {_debug_list[:5] if _debug_list else 'empty'}')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
+            _ = logger.debug(f'_v4_set contains {len(_debug_list)} IPs')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
+
+        for line in self.resolved_ips:
             line = line.partition('#')[0].strip()  # Watch for comments to right of ips from config
             if ':' in line:
                 _v6_set.add(line)
@@ -565,17 +635,25 @@ class AddressListBase(object):
                 _v4_set.add(line)
 
         if _v6_set:
+            if DEBUG_FLAG:
+                _debug_list = list(_v6_set)
+                _ = logger.debug(f'_v6_set[:5] = {_debug_list[:5] if _debug_list else 'empty'}')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
+                _ = logger.debug(f'_v6_set NOW contains {len(_debug_list)} IPs')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
             self.nft_sets['v6'] = _v6_set
         if _v4_set:
+            if DEBUG_FLAG:
+                _debug_list = list(_v4_set)
+                _ = logger.debug(f'_v4_set[:5] = {_debug_list[:5] if _debug_list else 'empty'}')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
+                _ = logger.debug(f'_v4_set NOW contains {len(_debug_list)} IPs')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
             self.nft_sets['v4'] = _v4_set
 
 
 class AddressListType(StrEnum):
     """docstring for AddressList"""
     ABSENT = ABSENT
-    BLACKLIST = 'BLACKLIST'
-    COUNTRY_LIST = "COUNTRY_LIST"
-    WHITELIST = 'WHITELIST'
+    BLACKLIST = 'blacklist'
+    COUNTRY_LIST = "country_list"
+    WHITELIST = 'whitelist'
 
 
 class AddressList(AddressListBase):
@@ -587,10 +665,9 @@ class AddressList(AddressListBase):
         files: list[str] | Absent = ABSENT,
         urls: list[str] | Absent = ABSENT
     ):
-        super(AddressList, self).__init__(list_type=list_type)
+        super(AddressList, self).__init__(list_type=list_type, urls=urls)
         self._ips: list[str] | Absent = ips
         self._files: list[str] | Absent = files
-        self._urls: list[str] | Absent = urls
 
     @property
     def ips(self) -> list[str] | Absent:
@@ -614,17 +691,37 @@ class AddressList(AddressListBase):
         else:
             self._files = ABSENT
 
-    @property
-    def urls(self) -> list[str] | Absent:
-        return self._urls
+    def load_ip_sources(self, skip_urls: bool = False) -> None:
+        '''Load IP sources: extract direct IPs, read local files, and fetch URLs, splitting into v4 and v6'''
+        # Read local files
+        if self.files is not ABSENT:
+            for path in self.files:
+                if path.startswith('#'):
+                    continue
+                file_path = Path(path).resolve()
+                try:
+                    with open(file_path, 'r') as f:
+                        _ = self.resolved_ips.extend(f.readlines())
+                except OSError:
+                    _ = logger.error(f'Failed to read local file {file_path}')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
+                    continue
+                else:
+                    if DEBUG_FLAG:
+                        _ = logger.debug(f'Loaded {len(self.resolved_ips)} IPs from {file_path}')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
 
-    @urls.setter
-    def urls(self, value: list[str]) -> None:
-        if value:
-            self._urls = value
-        else:
-            self._urls = ABSENT
+        if not skip_urls and self.urls is not ABSENT:
+            downloaded_count = self.get_urls()
+            if DEBUG_FLAG:
+                _ = logger.debug(f'Downloaded {downloaded_count} IPs')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
 
+    @override
+    def __str__(self) -> str:
+        str_rep = f"""
+        {str(super().list_type)}   ips: {self.ips}
+        {str(super().list_type)} files: {self.files}
+        {str(super().list_type)}  urls: {self.urls}
+        """
+        return str_rep
 
 class CountryListSourceMeta(EnumMeta):
     """
@@ -647,7 +744,7 @@ class CountryListSource(StrEnum, metaclass=CountryListSourceMeta):
     IPVERSE = 'ipverse'
 
 
-class CountryAddressList(AddressListBase):
+class CountryAddressList(AddressList):
     """docstring for CountryAddressList"""
     country_exclude_ports_template: ClassVar[str] = (
         'meta l4proto { tcp, udp } th dport { ${country_exclude_ports} } counter accept'
@@ -673,14 +770,16 @@ class CountryAddressList(AddressListBase):
         country_exclude_ports: list[str] | Absent,
         country_list: list[str] | Absent,
         country_list_source: CountryListSource,
-        country_policy: str
+        country_policy: str,
+        active_ip_versions: list[str]
     ):
-        super(CountryAddressList, self).__init__(list_type=AddressListType.COUNTRY_LIST)
+        super(CountryAddressList, self).__init__(list_type=AddressListType.COUNTRY_LIST, urls=list())
         self._country_exclude_ports: list[str] | Absent = country_exclude_ports
         self._country_exclude_ports_rule: str
         self._country_list: list[str] | Absent = country_list
         self._country_list_source: CountryListSource | Absent = country_list_source
         self._country_policy: str = country_policy
+        self._active_ip_versions: list[str] = active_ip_versions
 
         if self._country_exclude_ports is not ABSENT:
             self._country_exclude_ports_rule = Template(
@@ -690,6 +789,14 @@ class CountryAddressList(AddressListBase):
             )
         else:
             self._country_exclude_ports_rule = ''
+
+    @property
+    def active_ip_versions(self) -> list[str]:
+        return self._active_ip_versions
+
+    @active_ip_versions.setter
+    def active_ip_versions(self, value: list[str]):
+        self._active_ip_versions = value
 
     @property
     def country_exclude_ports(self) -> list[str] | Absent:
@@ -737,9 +844,45 @@ class CountryAddressList(AddressListBase):
     def country_policy(self, value: str):
         self._country_policy = value
 
+    def get_country_ips(self) -> None:
+        '''Fetch country IP lists based on configured source and return dict per IP version'''
+
+        count = 0
+        for ip_ver in self.active_ip_versions:
+            for country in self.country_list:
+                if self.country_list_source == 'ebrasha':
+                    country_code = country.upper()
+                    url_string: str = self.url_templates[self.country_list_source]  # pyright: ignore[reportAssignmentType]
+                elif self.country_list_source == 'ipdeny':
+                    country_code = country.lower()
+                    url_string = self.url_templates[self.country_list_source][ip_ver]  # pyright: ignore[reportArgumentType]
+                elif self.country_list_source == 'ipverse':
+                    country_code = country.lower()
+                    url_string = self.url_templates[self.country_list_source]  # pyright: ignore[reportAssignmentType]
+                else:
+                    raise
+                url: str = Template(url_string).substitute(country_code=country_code, ip_ver=ip_ver)
+                if DEBUG_FLAG:
+                    _ = logger.debug(f'url for country list download: {url}')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
+                self.urls.append(url)
+                count += 1
+
+        if DEBUG_FLAG:
+            _ = logger.debug(f'Adding {count} country_urls')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
+
+    @override
+    def load_ip_sources(self, skip_urls: bool = True):
+        _ = logger.debug('Running super().load_ip_sources(skip_urls=True)')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
+        super().load_ip_sources(skip_urls=skip_urls)
+        _ = logger.debug('Getting Country IPs...')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
+        self.get_country_ips()
+        _ = logger.debug('Getting URLs')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
+        ip_addr_count = self.get_urls()
+        _ = logger.debug(f'Loaded {ip_addr_count} IP Addresses')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
+
     @override
     def __str__(self):
-        str_rep = """
+        str_rep = f"""
         country_list: {self.country_list}
         country_list_source: {self.country_list_source}
         country_policy: {self.country_policy}
