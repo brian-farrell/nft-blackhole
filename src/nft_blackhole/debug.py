@@ -5,10 +5,12 @@ from pathlib import Path
 from nft_blackhole import Absent
 from nft_blackhole.config import Config
 
+from .logger import logger
+
 def save_resolved_ips(config: Config | Absent):
 	dt = datetime.now()
 	mod_path = Path(__file__).resolve()
-	print(f'\n\nMOD PATH:{mod_path}\n\n')
+	_ = logger.debug(f'mod_path is {mod_path}')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue](f'\n\nMOD PATH:{mod_path}\n\n')
 
 	for address_list in config.active_address_lists:
 		list_type = address_list.list_type
