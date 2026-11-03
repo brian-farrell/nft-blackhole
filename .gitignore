@@ -26,6 +26,9 @@ tests/__pycache__
 # Docker
 *docker-compose.override.yaml
 
+# Log files
+*.log
+
 # MacOS
 .DS_Store
 
