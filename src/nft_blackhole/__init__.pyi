@@ -27,10 +27,16 @@ class AbsentSentinel(str):
 			self.nft_sets: dict[str, list[str]]
 			self.urls: list[str]
 
+		def append(self, value: str | list[str] | None = None) -> None:
+			pass
+
 		def get(self, item, default=None) -> None:
 			pass
 
-		def split_ip_versions(self, ip_list: list[str]) -> None:
+		def load_ip_sources(self) -> None:
+			pass
+
+		def split_ip_versions(self) -> None:
 			pass
 
 		@override

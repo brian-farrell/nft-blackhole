@@ -2,7 +2,6 @@
 import os
 from typing import Any, ClassVar, TypeAlias, override
 
-
 DEBUG_FLAG = bool(os.getenv('NFT_BLACKHOLE_DEBUG', False))
 
 # TODO: Replace this with a true `sentinel` class when python3.15 is widely availble
@@ -18,13 +17,13 @@ class AbsentSentinel(str):
 
 	class _Absent(str):
 		def __init__(self):
-			pass
+			self.list_type: str = "'Absent'"
 
 		def get(self, item: Any, default: Any = None) -> Any:  # pyright: ignore[reportAny, reportExplicitAny, reportUnusedParameter]
 			return None
 
-		def split_ip_versions(self, ip_list: list[str]) -> None:
-			assert list[str], ip_list
+		def split_ip_versions(self) -> None:
+			pass
 
 		@override
 		def __str__(self) -> str:
