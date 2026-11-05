@@ -691,7 +691,7 @@ class AddressListBase(object):
             self.nft_sets['v4'] = _v4_set
 
         if DEBUG_FLAG:
-            if resolved_ips_count != ip_addr_count:
+            if ip_addr_count and resolved_ips_count != ip_addr_count:
                 _ = logger.error(f'resolved_ips_count: {resolved_ips_count} | ip_addr_count: {ip_addr_count}')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
 
             _ = logger.debug(f'{cc.BB_GREEN}DUPES Percentage: {1 - (_v_all_set_count / ip_addr_count) if ip_addr_count is not None else 0:.2%}{cc.BB_CYAN}')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
