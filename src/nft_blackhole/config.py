@@ -1,10 +1,12 @@
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
 from enum import EnumMeta, StrEnum
 from http.client import HTTPResponse
 import os
 from pathlib import Path
 from string import Template
+from subprocess import run
 from textwrap import dedent
 import tomllib
 import time
@@ -15,10 +17,11 @@ import urllib.request
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from . import DEBUG_FLAG, Absent, ABSENT
+from . import Absent, ABSENT, DEBUG_FLAG, NftbArgs, NftbColorCodes as cc
 from .exceptions import NftbConfigError
 from .logger import logger
 from .data.countries import country_code_lookup
+
 
 class Config(object):
     """The Config object holds all configuration values.
@@ -67,7 +70,7 @@ class Config(object):
         '\t\tflags interval\n\t\tauto-merge\n\t\telements = { ${ip_list} }\n\t}\n}'
     ).expandtabs()
 
-    def __init__(self):
+    def __init__(self, args:NftbArgs):
         self._active_ip_versions: list[str]
         self._blacklist: AddressList | Absent
         self._block_forward: bool
@@ -77,11 +80,14 @@ class Config(object):
         self._chain_output: str
         self._country_address_list: CountryAddressList | Absent
         self._default_policy: str
+        self._dry_run: bool
         self._ignore_certs: bool  # urllib
         self._priority: str
         self._whitelist: AddressList | Absent
 
         _config: dict[str, Any] | Exception = Config._load_config()  # pyright: ignore[reportExplicitAny]
+        self._dry_run = args.dry_run
+        _ = logger.debug(f'DRY RUN: {self._dry_run}')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
         self._configure(_config)  # pyright: ignore[reportArgumentType]
 
         self.jinja_env: Environment = Environment(
@@ -96,8 +102,43 @@ class Config(object):
         return cls._active_address_lists
 
     @active_address_lists.setter
-    def active_address_lists(self, value: list[AddressList | CountryAddressList | Absent]) -> None:
-        self._active_address_lists = value
+    def active_address_lists(cls, value: list[AddressList | CountryAddressList | Absent]) -> None:
+        cls._active_address_lists = value
+
+    def apply_nft_sets(self, reload: bool = False):
+        '''Create all nftables sets (whitelist, blacklist, country)'''
+        _ = logger.info("Applying NFT Sets...")  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
+        for address_list in self.active_address_lists:
+            for ip_version in self.active_ip_versions:
+                set_name = f'{address_list.list_type}-{ip_version}'
+                ip_list = address_list.nft_sets.get(ip_version)
+                if ip_list:
+                    set_list = ', '.join(ip_list)
+                    nft_set = (
+                        Template(self.nft_set_template).substitute(
+                            ip_ver=f'ip{ip_version}', set_name=set_name, ip_list=set_list
+                        )
+                    )
+                    ## print(f'{cc.BB_MAGENTA}{nft_set}{cc.RESET}')
+                    if not DEBUG_FLAG:
+                        if reload:
+                            _ = run(['nft', 'flush', 'set', 'inet', 'blackhole', set_name], check=False)
+                        if ip_list:
+                            _ = run(['nft', '-f', '-'], input=nft_set.encode(), check=True)
+                    else:
+                        dt = datetime.now()
+                        mod_path = Path(__file__).resolve()
+
+                        file_path = Path(
+                            f"{mod_path}/../../debug/{dt.strftime('%Y-%m-%d_%H%M%S')}_{address_list.list_type}_nft_set_{ip_version}.text"
+                        ).resolve()
+
+                        _ = logger.debug(f'Saving DEBUG file to: {file_path}')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
+
+                        with open(file_path, 'w') as file_handle:
+                            _ = file_handle.write(nft_set)
+
+
 
     @property
     def active_ip_versions(self) -> list[str]:
@@ -170,6 +211,14 @@ class Config(object):
     @default_policy.setter
     def default_policy(self, value: str):
         self._default_policy = value
+
+    @property
+    def dry_run(self) -> bool:
+        return self._dry_run
+
+    @dry_run.setter
+    def dry_run(self, value: bool) -> None:
+        self._block_forward = value
 
     @property
     def ignore_certs(self):
@@ -524,6 +573,14 @@ class NftPriorityKeyword(StrEnum, metaclass=NftPriorityKeywordMeta):
     SRCNAT = 'srcnat'
 
 
+class AddressListType(StrEnum):
+    """docstring for AddressList"""
+    ABSENT = ABSENT
+    BLACKLIST = 'blacklist'
+    COUNTRY_LIST = "country_list"
+    WHITELIST = 'whitelist'
+
+
 class AddressListBase(object):
     """docstring for AddressListBase"""
     def __init__(
@@ -614,18 +671,17 @@ class AddressListBase(object):
             return count            
 
 
-    def split_ip_versions(self) -> None:
+    def split_ip_versions(self, ip_addr_count: int | None) -> None:
         '''Split mixed list into deduplicated IPv4 and IPv6 sets'''
         _v6_set = self.nft_sets.get('v6', set())
         _v4_set = self.nft_sets.get('v4', set())
-        if DEBUG_FLAG:
-            _debug_list = list(_v6_set)
-            _ = logger.debug(f'_v6_set[:5] = {_debug_list[:5] if _debug_list else 'empty'}')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
-            _ = logger.debug(f'_v6_set contains {len(_debug_list)} IPs')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
+        _v_all_set_count = 0
 
-            _debug_list = list(_v4_set)
-            _ = logger.debug(f'_v4_set[:5] = {_debug_list[:5] if _debug_list else 'empty'}')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
-            _ = logger.debug(f'_v4_set contains {len(_debug_list)} IPs')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
+        if DEBUG_FLAG:
+            _ = logger.debug(f'_v6_set contains {cc.BB_YELLOW}{len(_v6_set): >12,}{cc.BB_CYAN} IPs')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
+            _ = logger.debug(f'_v4_set contains {cc.BB_YELLOW}{len(_v4_set): >12,}{cc.BB_CYAN} IPs')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
+
+        resolved_ips_count = len(self.resolved_ips)
 
         for line in self.resolved_ips:
             line = line.partition('#')[0].strip()  # Watch for comments to right of ips from config
@@ -636,25 +692,22 @@ class AddressListBase(object):
 
         if _v6_set:
             if DEBUG_FLAG:
-                _debug_list = list(_v6_set)
-                _ = logger.debug(f'_v6_set[:5] = {_debug_list[:5] if _debug_list else 'empty'}')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
-                _ = logger.debug(f'_v6_set NOW contains {len(_debug_list)} IPs')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
+                _v6_set_len = len(_v6_set)
+                _v_all_set_count += _v6_set_len
+                _ = logger.debug(f'{cc.LIGHT_GRAY}_v6_set{cc.BB_CYAN} NOW contains {cc.BB_YELLOW}{_v6_set_len: >8,}{cc.BB_CYAN} IPs')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
             self.nft_sets['v6'] = _v6_set
         if _v4_set:
             if DEBUG_FLAG:
-                _debug_list = list(_v4_set)
-                _ = logger.debug(f'_v4_set[:5] = {_debug_list[:5] if _debug_list else 'empty'}')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
-                _ = logger.debug(f'_v4_set NOW contains {len(_debug_list)} IPs')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
+                _v4_set_len = len(_v4_set)
+                _v_all_set_count += _v4_set_len
+                _ = logger.debug(f'{cc.LIGHT_GRAY}_v4_set{cc.BB_CYAN} NOW contains {cc.BB_YELLOW}{_v4_set_len: >8,}{cc.BB_CYAN} IPs')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
             self.nft_sets['v4'] = _v4_set
 
+        if DEBUG_FLAG:
+            if resolved_ips_count != ip_addr_count:
+                _ = logger.error(f'resolved_ips_count: {resolved_ips_count} | ip_addr_count: {ip_addr_count}')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
 
-class AddressListType(StrEnum):
-    """docstring for AddressList"""
-    ABSENT = ABSENT
-    BLACKLIST = 'blacklist'
-    COUNTRY_LIST = "country_list"
-    WHITELIST = 'whitelist'
-
+            _ = logger.debug(f'{cc.BB_GREEN}DUPES Percentage: {1 - (_v_all_set_count / ip_addr_count) if ip_addr_count is not None else 0:.2%}{cc.BB_CYAN}')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
 
 class AddressList(AddressListBase):
     """docstring for IPVersion"""
@@ -691,7 +744,7 @@ class AddressList(AddressListBase):
         else:
             self._files = ABSENT
 
-    def load_ip_sources(self, skip_urls: bool = False) -> None:
+    def load_ip_sources(self, skip_urls: bool = False) -> int | None:
         '''Load IP sources: extract direct IPs, read local files, and fetch URLs, splitting into v4 and v6'''
         # Read local files
         if self.files is not ABSENT:
@@ -712,7 +765,10 @@ class AddressList(AddressListBase):
         if not skip_urls and self.urls is not ABSENT:
             downloaded_count = self.get_urls()
             if DEBUG_FLAG:
-                _ = logger.debug(f'Downloaded {downloaded_count} IPs')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
+                _ = logger.debug(f'Downloaded {cc.BB_YELLOW}{downloaded_count: ,}{cc.BB_CYAN} IPs for {self.list_type}')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
+            return downloaded_count
+        else:
+            return None
 
     @override
     def __str__(self) -> str:
@@ -871,14 +927,19 @@ class CountryAddressList(AddressList):
             _ = logger.debug(f'Adding {count} country_urls')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
 
     @override
-    def load_ip_sources(self, skip_urls: bool = True):
+    def load_ip_sources(self, skip_urls: bool = True) -> int | None:
         _ = logger.debug('Running super().load_ip_sources(skip_urls=True)')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
-        super().load_ip_sources(skip_urls=skip_urls)
+        _ = super().load_ip_sources(skip_urls=skip_urls)
+
         _ = logger.debug('Getting Country IPs...')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
         self.get_country_ips()
-        _ = logger.debug('Getting URLs')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
+
+        _ = logger.debug('Getting URLs...')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
         ip_addr_count = self.get_urls()
-        _ = logger.debug(f'Loaded {ip_addr_count} IP Addresses')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
+
+        _ = logger.debug(f'Downloaded {cc.BB_YELLOW}{ip_addr_count: ,}{cc.BB_CYAN} IPs for {self.list_type}')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
+
+        return ip_addr_count
 
     @override
     def __str__(self):

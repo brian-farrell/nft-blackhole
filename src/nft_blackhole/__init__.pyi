@@ -1,4 +1,5 @@
 
+from dataclasses import dataclass
 from enum import StrEnum
 import os
 from typing import Any, ClassVar, TypeAlias, override
@@ -36,7 +37,7 @@ class AbsentSentinel(str):
 		def load_ip_sources(self) -> None:
 			pass
 
-		def split_ip_versions(self) -> None:
+		def split_ip_versions(self, ip_addr_count: int | None) -> None:
 			pass
 
 		@override
@@ -59,3 +60,24 @@ class AbsentSentinel(str):
 
 Absent: TypeAlias = AbsentSentinel._Absent
 ABSENT: Absent = Absent()
+
+
+@dataclass
+class NftbArgs:
+    """
+    We use this dataclass to allow us to type hint command line args
+    """
+    cmd: str
+    dry_run: bool
+    ignore_certs: bool
+    ignore_warnings: bool
+
+class NftbColorCodes(StrEnum):
+    BB_CYAN = "\x1b[1;38;5;123m"
+    BB_MAGENTA =  "\x1b[1;35m"
+    BB_RED = "\x1b[1;31m"
+    BB_YELLOW = "\x1b[1;33m"
+    BB_GREEN = "\x1b[1;92m"
+    LIGHT_GRAY = "\x1b[0;37m"
+    ORANGE = "\x1b[38;5;166m"
+    RESET = "\x1b[0m"

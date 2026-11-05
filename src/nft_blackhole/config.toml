@@ -40,7 +40,7 @@ country_list = ['fi', 'cn']
 # Country exclude ports: port numbers or names, e.g: [993, https]
 # List is available in /etc/services
 # These ports will be accessible on TCP and UDP protocols from all countries (but not from blacklisted IPs)
-country_exclude_ports = [993, 'https', 8080]
+country_exclude_ports = []
 
 # urllib config
 #

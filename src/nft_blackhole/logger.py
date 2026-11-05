@@ -6,21 +6,19 @@ from typing import final, override
 from cysystemd.journal import JournaldLogHandler
 from nft_blackhole.exceptions import NftbError, ExitCode
 
-from . import DEBUG_FLAG
+from . import DEBUG_FLAG, NftbColorCodes as cc
 
 # Logging formatter supporting colored output
 @final
 class LogFormatter(logging.Formatter):
 
     COLOR_CODES = {
-        logging.CRITICAL: "\x1b[1;35m", # bright/bold magenta (pink)
-        logging.ERROR:    "\x1b[1;31m", # bright/bold red
-        logging.WARNING:  "\x1b[1;33m", # bright/bold yellow
-        logging.INFO:     "\x1b[0;37m", # white / light gray
-        logging.DEBUG:    "\x1b[1;38;5;123m"  # bold/bright cyan
+        logging.CRITICAL: cc.BB_MAGENTA,
+        logging.ERROR:    cc.BB_RED,
+        logging.WARNING:  cc.BB_YELLOW,
+        logging.INFO:     cc.LIGHT_GRAY,
+        logging.DEBUG:    cc.BB_CYAN
     }
-
-    RESET_CODE = "\x1b[0m"
 
     def __init__(self, color, *args, **kwargs):
         super(LogFormatter, self).__init__(*args, **kwargs)
@@ -30,7 +28,7 @@ class LogFormatter(logging.Formatter):
     def format(self, record, *args, **kwargs):
         if (self.color == True and record.levelno in self.COLOR_CODES):
             record.color_on  = self.COLOR_CODES[record.levelno]
-            record.color_off = self.RESET_CODE
+            record.color_off = cc.RESET
         else:
             record.color_on  = ""
             record.color_off = ""

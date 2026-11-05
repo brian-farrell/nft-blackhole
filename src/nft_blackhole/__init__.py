@@ -1,4 +1,6 @@
 
+from dataclasses import dataclass
+from enum import StrEnum
 import os
 from typing import Any, ClassVar, TypeAlias, override
 
@@ -22,8 +24,8 @@ class AbsentSentinel(str):
 		def get(self, item: Any, default: Any = None) -> Any:  # pyright: ignore[reportAny, reportExplicitAny, reportUnusedParameter]
 			return None
 
-		def split_ip_versions(self) -> None:
-			pass
+		def split_ip_versions(self, ip_addr_count: int | None) -> None:
+			assert isinstance(ip_addr_count, int | None)
 
 		@override
 		def __str__(self) -> str:
@@ -43,3 +45,31 @@ class AbsentSentinel(str):
 
 Absent: TypeAlias = AbsentSentinel._Absent  # pyright: ignore[reportPrivateUsage]
 ABSENT: Absent = Absent()
+
+
+@dataclass
+class NftbArgs:
+    """
+    We use this dataclass to allow us to type hint command line args
+    """
+    cmd: str
+    dry_run: bool
+    ignore_certs: bool
+    ignore_warnings: bool
+
+    def __post_init__(self):
+        assert isinstance(self.cmd, str)
+        assert isinstance(self.dry_run, bool)
+        assert isinstance(self.ignore_certs, bool)
+        assert isinstance(self.ignore_warnings, bool)
+
+
+class NftbColorCodes(StrEnum):
+    BB_CYAN = "\x1b[1;38;5;123m"	# bold/bright cyan
+    BB_MAGENTA =  "\x1b[1;35m"		# bright/bold magenta (pink)
+    BB_RED = "\x1b[1;31m"			# bright/bold red
+    BB_YELLOW = "\x1b[1;33m"		# bright/bold yellow
+    BB_GREEN = "\x1b[1;92m"			# bright/bold green
+    LIGHT_GRAY = "\x1b[0;37m"		# white / light gray
+    ORANGE = "\x1b[38;5;166m"		# orange / rust
+    RESET = "\x1b[0m"				# reset to default coloring
