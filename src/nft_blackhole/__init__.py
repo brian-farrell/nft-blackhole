@@ -4,6 +4,7 @@ from enum import StrEnum
 import os
 from typing import Any, ClassVar, TypeAlias, override
 
+
 DEBUG_FLAG = bool(os.getenv('NFT_BLACKHOLE_DEBUG', False))
 
 # TODO: Replace this with a true `sentinel` class when python3.15 is widely availble
@@ -70,6 +71,7 @@ class NftbColorCodes(StrEnum):
     BB_RED = "\x1b[1;31m"			# bright/bold red
     BB_YELLOW = "\x1b[1;33m"		# bright/bold yellow
     BB_GREEN = "\x1b[1;92m"			# bright/bold green
+    GREEN = "\x1b[0;92m"			# green
     LIGHT_GRAY = "\x1b[0;37m"		# white / light gray
     ORANGE = "\x1b[38;5;166m"		# orange / rust
     RESET = "\x1b[0m"				# reset to default coloring

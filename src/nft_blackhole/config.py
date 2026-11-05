@@ -1,6 +1,5 @@
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
 from enum import EnumMeta, StrEnum
 from http.client import HTTPResponse
 import os
@@ -16,6 +15,7 @@ from urllib.error import HTTPError
 import urllib.request
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
+from nft_blackhole.debug import save_debug_file
 
 from . import Absent, ABSENT, DEBUG_FLAG, NftbArgs, NftbColorCodes as cc
 from .exceptions import NftbConfigError
@@ -119,26 +119,13 @@ class Config(object):
                             ip_ver=f'ip{ip_version}', set_name=set_name, ip_list=set_list
                         )
                     )
-                    ## print(f'{cc.BB_MAGENTA}{nft_set}{cc.RESET}')
                     if not DEBUG_FLAG:
                         if reload:
                             _ = run(['nft', 'flush', 'set', 'inet', 'blackhole', set_name], check=False)
                         if ip_list:
                             _ = run(['nft', '-f', '-'], input=nft_set.encode(), check=True)
                     else:
-                        dt = datetime.now()
-                        mod_path = Path(__file__).resolve()
-
-                        file_path = Path(
-                            f"{mod_path}/../../debug/{dt.strftime('%Y-%m-%d_%H%M%S')}_{address_list.list_type}_nft_set_{ip_version}.text"
-                        ).resolve()
-
-                        _ = logger.debug(f'Saving DEBUG file to: {file_path}')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
-
-                        with open(file_path, 'w') as file_handle:
-                            _ = file_handle.write(nft_set)
-
-
+                        save_debug_file(f'nft_set_{ip_version}', nft_set)
 
     @property
     def active_ip_versions(self) -> list[str]:
@@ -536,14 +523,14 @@ class Config(object):
     def __str__(self):
         config = f"""
         {str(self.blacklist)}
-        block_forward: {self.block_forward}
-        block_policy: {self.block_policy}
-        block_output: {self.block_output}
+        {cc.ORANGE}block_forward: {cc.GREEN}{self.block_forward}
+        {cc.ORANGE}block_policy: {cc.GREEN}{self.block_policy}
+        {cc.ORANGE}block_output: {cc.GREEN}{self.block_output}{cc.RESET}
         {str(self.country_address_list)}
-        default_policy: {self.default_policy}
-        ignore_certs: {self.ignore_certs}
-        active_ip_versions: {self.active_ip_versions}
-        priority: {self.priority}
+        {cc.ORANGE}default_policy: {cc.GREEN}{self.default_policy}
+        {cc.ORANGE}ignore_certs: {cc.GREEN}{self.ignore_certs}
+        {cc.ORANGE}active_ip_versions: {cc.GREEN}{self.active_ip_versions}
+        {cc.ORANGE}priority: {cc.GREEN}{self.priority}{cc.RESET}
         {str(self.whitelist)}
         """
         return dedent(config)
@@ -773,9 +760,9 @@ class AddressList(AddressListBase):
     @override
     def __str__(self) -> str:
         str_rep = f"""
-        {str(super().list_type)}   ips: {self.ips}
-        {str(super().list_type)} files: {self.files}
-        {str(super().list_type)}  urls: {self.urls}
+        {cc.ORANGE}{str(super().list_type)}   ips: {cc.GREEN}{self.ips}
+        {cc.ORANGE}{str(super().list_type)} files: {cc.GREEN}{self.files}
+        {cc.ORANGE}{str(super().list_type)}  urls: {cc.GREEN}{self.urls}{cc.RESET}
         """
         return str_rep
 
@@ -944,10 +931,10 @@ class CountryAddressList(AddressList):
     @override
     def __str__(self):
         str_rep = f"""
-        country_list: {self.country_list}
-        country_list_source: {self.country_list_source}
-        country_policy: {self.country_policy}
-        country_exclude_ports: {self.country_exclude_ports}
+        {cc.ORANGE}country_list:{cc.GREEN} {self.country_list}
+        {cc.ORANGE}country_list_source:{cc.GREEN} {self.country_list_source}
+        {cc.ORANGE}country_policy:{cc.GREEN} {self.country_policy}
+        {cc.ORANGE}country_exclude_ports:{cc.GREEN} {self.country_exclude_ports}{cc.RESET}
         """
 
         return str_rep

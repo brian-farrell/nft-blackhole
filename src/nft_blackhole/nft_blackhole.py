@@ -4,21 +4,18 @@ whitelist/blacklist IP addresses in nftables
 """
 
 import argparse
-from datetime import datetime
 from importlib.metadata import version, PackageNotFoundError
-from pathlib import Path
 import ssl
-from subprocess import run
+from subprocess import DEVNULL, run
 import sys
 import urllib.request
 
-from . import ABSENT, DEBUG_FLAG, NftbArgs
+from . import ABSENT, DEBUG_FLAG, NftbArgs, NftbColorCodes as cc
 from .config import Config
+from .debug import save_debug_file
 from .exceptions import NftbError
 from .logger import logger
 
-
-# TODO: Add copius logging here and in config module
 
 def start(config: Config):
     """Starting nft-blackhole"""
@@ -36,15 +33,7 @@ def start(config: Config):
     )
 
     if DEBUG_FLAG or config.dry_run:
-        dt = datetime.now()
-        mod_path = Path(__file__).resolve()
-        file_path = Path(
-            f"{mod_path}/../../debug/{dt.strftime('%Y-%m-%d_%H%M%S')}_nft_conf.text"
-        ).resolve()
-        _ = logger.debug(f'Saving DEBUG file to: {file_path}')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
-
-        with open(file_path, 'w') as file_handle:
-            _ = file_handle.write(nft_conf)
+        save_debug_file('nft_conf.conf', nft_conf)
     else:
         _ = run(['nft', '-f', '-'], input=nft_conf.encode(), check=True)
 
@@ -56,19 +45,29 @@ def stop(config: Config):
     """Stopping nft-blackhole"""
     _ = logger.info('Stopping nft-blackhole...')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
     if DEBUG_FLAG or config.dry_run:
-        print(f'DEBUG_FLAG is {DEBUG_FLAG}. "Stopping nft-blackhole"')
+        _ = logger.debug(f'DEBUG_FLAG is {DEBUG_FLAG}. Stopping nft-blackhole...')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
     else:
+        _ = logger.info(f'Stopping nft-blackhole...')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
         _ = run(['nft', 'delete', 'table', 'inet', 'blackhole'], check=True)
 
 
 def restart(config: Config):
-    _ = logger.info("Re-starting nft-blackhole")  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
+    _ = logger.info("Re-starting nft-blackhole...")  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
     stop(config=config)
     start(config=config)
 
 
 def reload(config: Config):
-    _ = logger.info("Re-loading nft-blackhole sets")  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
+    _ = logger.info("Re-loading nft-blackhole sets...")  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
+
+    result = run(
+        ['nft', 'list', 'chain', 'inet', 'blackhole', 'input'],
+        stdout=DEVNULL, stderr=DEVNULL, check=False
+    )
+
+    if result.returncode != 0:
+        start(config=config)
+
     _ = fetch_all_lists(config)
     _ = config.apply_nft_sets(reload=True)
 

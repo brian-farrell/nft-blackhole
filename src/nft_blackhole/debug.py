@@ -2,26 +2,15 @@
 from datetime import datetime
 from pathlib import Path
 
-from nft_blackhole import Absent
-from nft_blackhole.config import Config
-
 from .logger import logger
 
-def save_resolved_ips(config: Config | Absent):
+def save_debug_file(file_name: str | Path, file_data: str):
 	dt = datetime.now()
 	mod_path = Path(__file__).resolve()
-	_ = logger.debug(f'mod_path is {mod_path}')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue](f'\n\nMOD PATH:{mod_path}\n\n')
+	file_path = Path(
+	    f"{mod_path}/../../debug/{dt.strftime('%Y-%m-%d_%H%M%S')}_{file_name}"
+	).resolve()
+	_ = logger.debug(f'Saving DEBUG file to: {file_path}')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
 
-	for address_list in config.active_address_lists:
-		list_type = address_list.list_type
-		for ip_version in config.active_ip_versions:
-			file_path = Path(
-				f"{mod_path}/../../debug/{dt.strftime('%Y-%m-%d_%H%M%S')}_{list_type}_nft_set_{ip_version}.text"
-			).resolve()
-
-			_data = address_list.nft_sets.get(ip_version)
-			
-			if _data:
-				with open(file_path, 'w') as file_handle:
-					for ip_address in _data:
-						_ = file_handle.write(f'{ip_address}\n')
+	with open(file_path, 'w') as file_handle:
+	    _ = file_handle.write(file_data)

@@ -78,6 +78,7 @@ class NftbColorCodes(StrEnum):
     BB_RED = "\x1b[1;31m"
     BB_YELLOW = "\x1b[1;33m"
     BB_GREEN = "\x1b[1;92m"
+    GREEN = "\x1b[0;92m"
     LIGHT_GRAY = "\x1b[0;37m"
     ORANGE = "\x1b[38;5;166m"
     RESET = "\x1b[0m"
