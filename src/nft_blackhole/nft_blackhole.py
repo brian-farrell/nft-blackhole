@@ -70,6 +70,7 @@ def reload(config: Config):
 
     _ = fetch_all_lists(config)
     _ = config.apply_nft_sets(reload=True)
+    _ = logger.info("NFT Sets applied. nft-blackhole complete!")  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
 
 
 def fetch_all_lists(config: Config) -> None:
