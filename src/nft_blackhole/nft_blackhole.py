@@ -39,6 +39,7 @@ def start(config: Config):
 
     _ = fetch_all_lists(config)
     _ = config.apply_nft_sets()
+    _ = logger.info("NFT Sets applied. nft-blackhole complete!")  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
 
 
 def stop(config: Config):
@@ -47,7 +48,6 @@ def stop(config: Config):
     if DEBUG_FLAG or config.dry_run:
         _ = logger.debug(f'DEBUG_FLAG is {DEBUG_FLAG}. Stopping nft-blackhole...')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
     else:
-        _ = logger.info(f'Stopping nft-blackhole...')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
         _ = run(['nft', 'delete', 'table', 'inet', 'blackhole'], check=True)
 
 
