@@ -824,7 +824,8 @@ class CountryAddressList(AddressList):
         self._country_policy: str = country_policy
         self._active_ip_versions: list[str] = active_ip_versions
 
-        if self._country_exclude_ports is not ABSENT:
+        if self._country_exclude_ports is not ABSENT and self._country_exclude_ports != []:
+            _ = logger.error(f'self._country_exclude_ports: {self.country_exclude_ports}')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
             self._country_exclude_ports_rule = Template(
                 self.country_exclude_ports_template
             ).substitute(
@@ -832,7 +833,7 @@ class CountryAddressList(AddressList):
             )
         else:
             self._country_exclude_ports_rule = ''
-
+        _ = logger.error(f'self.country_exclude_ports_rule: {self.country_exclude_ports_rule}')  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType, reportAttributeAccessIssue]
     @property
     def active_ip_versions(self) -> list[str]:
         return self._active_ip_versions
